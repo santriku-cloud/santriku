@@ -2707,6 +2707,12 @@ let currentStudent = null; // for parent/student portal session
 let teacherName = "";
 let teacherSlug = "";
 
+// Halaman yang sedang aktif di tiap portal — dipakai supaya sinkronisasi real-time tahu apa yang harus digambar ulang.
+let currentTeacherPage = "dashboard";
+let currentParentPage = "dashboard";
+let currentStudentPage = "dashboard";
+let dashboardSelectedMonthIndex = new Date().getMonth();
+
 function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 
 function seedData(){
@@ -2777,6 +2783,59 @@ async function saveDB(){
   }
 }
 
+/* =========================================================
+   REAL-TIME SYNC
+   Setiap perubahan data (oleh guru, orang tua, atau santri)
+   langsung tersiar ke semua portal yang sedang terbuka, tanpa
+   perlu refresh — memakai listener realtime Firebase.
+   ========================================================= */
+let realtimeSyncAttached = false;
+let suppressNextRealtimeUpdate = true; // hindari render ulang ganda saat listener pertama kali terpasang
+
+function attachRealtimeSync(){
+  if(realtimeSyncAttached) return;
+  realtimeSyncAttached = true;
+  window.fb.onValue(window.fb.ref(window.fb.db, "edusyncData"), (snap)=>{
+    if(suppressNextRealtimeUpdate){ suppressNextRealtimeUpdate = false; return; }
+    if(!snap.exists() || !snap.val().json) return;
+    try {
+      DB = JSON.parse(snap.val().json);
+    } catch(e){ return; }
+    refreshCurrentView();
+  });
+}
+
+// Jangan menggambar ulang saat orang sedang mengetik di sebuah form (supaya isian tidak hilang).
+function isUserTyping(){
+  const el = document.activeElement;
+  return !!(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT"));
+}
+
+function refreshCurrentView(){
+  if(isUserTyping()) return;
+  const activeScreen = document.querySelector(".screen.active");
+  if(!activeScreen) return;
+  if(activeScreen.id === "screen-teacher"){
+    const fn = TEACHER_RENDERERS[currentTeacherPage];
+    if(fn) fn();
+  } else if(activeScreen.id === "screen-parent" && currentStudent){
+    // pastikan data siswa yang sedang login masih ada & sinkron
+    const fresh = studentById(currentStudent.id);
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); goRole("role"); return; }
+    currentStudent = fresh;
+    if(currentParentPage === "dashboard") renderParentDashboard();
+    else if(currentParentPage === "kunjungan") renderParentVisits();
+    else if(currentParentPage === "izin") renderParentIzin();
+  } else if(activeScreen.id === "screen-student" && currentStudent){
+    const fresh = studentById(currentStudent.id);
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); goRole("role"); return; }
+    currentStudent = fresh;
+    updateStudentProfileButton();
+    if(currentStudentPage === "dashboard") renderStudentDashboard();
+    else if(currentStudentPage === "izin") renderStudentIzin();
+  }
+}
+
 function toast(msg, type="ok"){
   const host = document.getElementById("toast-host");
   const el = document.createElement("div");
@@ -2830,8 +2889,8 @@ function totalPoints(studentId){
     .reduce((sum,r)=>{ const t=typeById(r.typeId); return sum + (t?t.points:0); }, 0);
 }
 
-function unpaidCountThisMonth(){
-  const mKey = monthKey(CURRENT_YEAR, new Date().getMonth());
+function unpaidCountForMonthIndex(monthIndex){
+  const mKey = monthKey(CURRENT_YEAR, monthIndex);
   return DB.students.filter(s => paymentStatus(s.id, mKey) !== "paid").length;
 }
 
@@ -2845,7 +2904,7 @@ function violationsThisWeek(){
    ========================================================= */
 function renderTeacherDashboard(){
   const el = document.getElementById("teacher-content");
-  const unpaid = unpaidCountThisMonth();
+  const unpaid = unpaidCountForMonthIndex(dashboardSelectedMonthIndex);
   const weekViol = violationsThisWeek();
   const recentRecords = [...DB.violationRecords].sort((a,b)=> new Date(b.date)-new Date(a.date)).slice(0,5);
 
@@ -2859,9 +2918,22 @@ function renderTeacherDashboard(){
         <div><p class="text-sm text-on-surface-variant mb-1">Total Siswa</p><h3 class="text-3xl font-display font-extrabold">${DB.students.length}</h3></div>
         <div class="w-12 h-12 rounded-full bg-primary-fixed flex items-center justify-center text-primary"><span class="material-symbols-outlined filled">groups</span></div>
       </div>
-      <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant flex items-center justify-between">
-        <div><p class="text-sm text-on-surface-variant mb-1">Belum Bayar (Bulan Ini)</p><h3 class="text-3xl font-display font-extrabold text-error">${unpaid}</h3></div>
-        <div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center text-on-error-container"><span class="material-symbols-outlined filled">payments</span></div>
+      <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant relative" id="dashboard-unpaid-card">
+        <div class="flex items-center justify-between">
+          <div class="min-w-0">
+            <button onclick="toggleDashboardMonthPicker(event)" class="flex items-center gap-1 text-sm text-on-surface-variant mb-1 hover:text-primary transition-colors">
+              <span class="truncate">Belum Bayar (${MONTHS_ID[dashboardSelectedMonthIndex]} ${CURRENT_YEAR})</span>
+              <span class="material-symbols-outlined text-[16px] shrink-0">expand_more</span>
+            </button>
+            <h3 class="text-3xl font-display font-extrabold text-error">${unpaid}</h3>
+          </div>
+          <div class="w-12 h-12 rounded-full bg-error-container flex items-center justify-center text-on-error-container shrink-0"><span class="material-symbols-outlined filled">payments</span></div>
+        </div>
+        <div id="dashboard-month-picker" class="hidden absolute left-0 right-0 top-full mt-2 z-20 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-2 grid grid-cols-4 gap-1">
+          ${MONTHS_ID.map((m,i)=>`
+            <button onclick="selectDashboardMonth(${i})" class="text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${i===dashboardSelectedMonthIndex ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container"}">${m}</button>
+          `).join("")}
+        </div>
       </div>
       <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant flex items-center justify-between">
         <div><p class="text-sm text-on-surface-variant mb-1">Pelanggaran Minggu Ini</p><h3 class="text-3xl font-display font-extrabold">${weekViol}</h3></div>
@@ -2888,6 +2960,25 @@ function renderTeacherDashboard(){
     </div>
   `;
 }
+
+function toggleDashboardMonthPicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("dashboard-month-picker");
+  if(!picker) return;
+  picker.classList.toggle("hidden");
+}
+
+function selectDashboardMonth(monthIndex){
+  dashboardSelectedMonthIndex = monthIndex;
+  renderTeacherDashboard();
+}
+
+document.addEventListener("click", function(e){
+  const card = document.getElementById("dashboard-unpaid-card");
+  const picker = document.getElementById("dashboard-month-picker");
+  if(!card || !picker || picker.classList.contains("hidden")) return;
+  if(!card.contains(e.target)) picker.classList.add("hidden");
+});
 
 function formatDate(iso){
   const d = new Date(iso);
@@ -3875,6 +3966,19 @@ const TEACHER_NAV_ITEMS = [
   { id: "control", icon: "qr_code_2", label: "Menu Kontrol" },
 ];
 
+// Dipakai baik oleh navigasi manual (teacherGo) maupun oleh sinkronisasi real-time
+// untuk menggambar ulang halaman yang sedang aktif ketika data berubah.
+const TEACHER_RENDERERS = {
+  dashboard: () => renderTeacherDashboard(),
+  students: () => renderTeacherStudents(),
+  payments: () => renderTeacherPayments(),
+  "violation-types": () => renderTeacherViolationTypes(),
+  "log-violation": () => renderTeacherLogViolation(),
+  visits: () => renderTeacherVisits(),
+  izin: () => renderTeacherIzin(),
+  control: () => renderTeacherControl(),
+};
+
 function renderTeacherNav(){
   const linkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-outline hover:text-white hover:bg-white/10 transition-colors";
   const mobileLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors";
@@ -3923,12 +4027,12 @@ function setActiveNav(id){
 }
 
 function teacherGo(page){
+  currentTeacherPage = page;
   setActiveNav(page);
   closeTeacherMobileNav();
   const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", control:"Menu Kontrol" };
   document.getElementById("teacher-page-title").textContent = titles[page];
-  const renderers = { dashboard: renderTeacherDashboard, students: renderTeacherStudents, payments: renderTeacherPayments, "violation-types": renderTeacherViolationTypes, "log-violation": renderTeacherLogViolation, visits: renderTeacherVisits, izin: renderTeacherIzin, control: renderTeacherControl };
-  renderers[page]();
+  TEACHER_RENDERERS[page]();
 }
 
 /* =========================================================
@@ -4047,6 +4151,7 @@ function setParentActiveNav(id){
 }
 
 function parentGo(page){
+  currentParentPage = page;
   setParentActiveNav(page);
   if(page==="dashboard") renderParentDashboard();
   else if(page==="kunjungan") renderParentVisits();
@@ -4311,6 +4416,7 @@ function setStudentActiveNav(id){
 }
 
 function studentGo(page){
+  currentStudentPage = page;
   setStudentActiveNav(page);
   if(page==="dashboard") renderStudentDashboard();
   else if(page==="izin") renderStudentIzin();
@@ -4461,6 +4567,9 @@ async function initApp(){
   if(!wasTokenEntry){
     await restoreTeacherSession();
   }
+  // Setelah data awal siap, pasang listener real-time supaya semua perubahan
+  // (oleh guru, orang tua, atau santri) langsung terlihat di semua portal tanpa refresh.
+  attachRealtimeSync();
 }
 
 // Dipanggil dari modul Firebase setelah koneksi siap (lihat script type="module" di bawah).
@@ -4471,7 +4580,7 @@ window.initApp = initApp;
 <!-- ============ FIREBASE INIT (Realtime Database) ============ -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-  import { getDatabase, ref, get, set } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+  import { getDatabase, ref, get, set, onValue } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCi7pWFxC0i1vtw6nFLqr5bFy-Ptv5jINM",
@@ -4487,7 +4596,7 @@ window.initApp = initApp;
   const db = getDatabase(fbApp);
 
   // Diakses oleh script utama (non-module) di atas lewat window.fb
-  window.fb = { db, ref, get, set };
+  window.fb = { db, ref, get, set, onValue };
 
   window.__fbReady = true;
   if (window.initApp) window.initApp();

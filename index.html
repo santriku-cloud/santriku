@@ -8,6 +8,7 @@
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
 tailwind.config = {
@@ -58,6 +59,7 @@ tailwind.config = {
   .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1; }
   body { font-family: 'Hanken Grotesk', sans-serif; }
   h1,h2,h3,h4,.font-display { font-family: 'Manrope', sans-serif; }
+  .font-arabic { font-family: 'Amiri', serif; }
   .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
   .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
   .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -3410,7 +3412,7 @@ function renderTeacherControl(){
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl">
       <h4 class="font-display font-bold mb-1">Barcode Portal Orang Tua</h4>
-      <p class="text-xs text-on-surface-variant mb-4">Barcode ini adalah gerbang masuk ke Portal Orang Tua. Cetak/bagikan ke wali santri. Jika barcode disalahgunakan atau bocor, klik "Ganti Barcode" barcode lama otomatis tidak berlaku lagi.</p>
+      <p class="text-xs text-on-surface-variant mb-4">Barcode ini adalah gerbang masuk ke Portal Orang Tua. Cetak/bagikan ke wali santri. Jika barcode disalahgunakan atau bocor, klik "Ganti Barcode" — barcode lama otomatis tidak berlaku lagi.</p>
       <div class="flex flex-col items-center gap-3 bg-surface-container-low rounded-xl p-6 border border-outline-variant">
         <div id="control-parent-qr"></div>
         <p class="text-[11px] text-on-surface-variant break-all text-center" id="control-parent-url"></p>
@@ -3423,7 +3425,7 @@ function renderTeacherControl(){
 
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-3xl mt-6">
       <h4 class="font-display font-bold mb-1">Akun Guru Terdaftar</h4>
-      <p class="text-lg leading-loose text-right mb-2" dir="rtl" lang="ar">مَا مِنْ عَبْدٍ يَسْتَرْعِيْهِ اللَّهُ رَعِيَّةً، يَمُوْتُ يَوْمَ يَمُوْتُ، وَهُوَ غَاشٌّ لِرَعِيَّتِهِ، إِلاَّ حَرَّمَ اللَّهُ عَلَيْهِ الْجَنَّةَ</p>
+      <p class="font-arabic text-2xl leading-loose text-right mb-2" dir="rtl" lang="ar">مَا مِنْ عَبْدٍ يَسْتَرْعِيْهِ اللَّهُ رَعِيَّةً، يَمُوْتُ يَوْمَ يَمُوْتُ، وَهُوَ غَاشٌّ لِرَعِيَّتِهِ، إِلاَّ حَرَّمَ اللَّهُ عَلَيْهِ الْجَنَّةَ</p>
       <p class="text-xs text-on-surface-variant mb-4 italic">Artinya: "Tidaklah seorang hamba yang diserahi Allah untuk memimpin rakyat, lalu ia meninggal dunia dalam keadaan curang terhadap rakyatnya, kecuali Allah mengharamkannya masuk surga." (Hadis riwayat Imam al-Bukhari)</p>
       <div class="overflow-x-auto custom-scrollbar">
         <table class="w-full text-left text-sm">

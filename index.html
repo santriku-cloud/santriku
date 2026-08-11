@@ -2713,6 +2713,13 @@ let currentParentPage = "dashboard";
 let currentStudentPage = "dashboard";
 let dashboardSelectedMonthIndex = new Date().getMonth();
 
+const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
+
+// Filter riwayat pelanggaran (tanggal/bulan/hari/jam) — dipakai di halaman guru, siswa & orang tua
+let teacherViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let studentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let parentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+
 function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 
 function seedData(){
@@ -2749,6 +2756,11 @@ function todayISO(offsetDays=0){
   const d = new Date();
   d.setDate(d.getDate()+offsetDays);
   return d.toISOString().slice(0,10);
+}
+
+function nowHHMM(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
 }
 
 async function loadDB(){
@@ -2988,6 +3000,89 @@ function formatDate(iso){
 function dayNameID(iso){
   const d = new Date(iso);
   return d.toLocaleDateString("id-ID", { weekday: "long" });
+}
+
+// Format lengkap: "Selasa, 11 Agu 2026 • 07.30" — dipakai di baris riwayat pelanggaran
+function formatDateTimeFull(iso, time){
+  const d = new Date(iso);
+  const tanggal = d.toLocaleDateString("id-ID", { weekday:"long", day:"numeric", month:"short", year:"numeric" });
+  return time ? `${tanggal} • ${time.replace(":", ".")}` : tanggal;
+}
+
+/* =========================================================
+   FILTER RIWAYAT PELANGGARAN (tanggal / bulan / hari / jam)
+   Dipakai bersama oleh halaman guru, siswa & orang tua.
+   ========================================================= */
+function violationMatchesFilter(r, f){
+  if(f.date && r.date !== f.date) return false;
+  if(f.month && f.month !== ""){
+    const bulan = String(new Date(r.date).getMonth()+1).padStart(2,"0");
+    if(bulan !== f.month) return false;
+  }
+  if(f.day && f.day !== ""){
+    const HARI_IDX = { "Minggu":0, "Senin":1, "Selasa":2, "Rabu":3, "Kamis":4, "Jumat":5, "Sabtu":6 };
+    if(new Date(r.date).getDay() !== HARI_IDX[f.day]) return false;
+  }
+  if(f.timeFrom && r.time && r.time < f.timeFrom) return false;
+  if(f.timeTo && r.time && r.time > f.timeTo) return false;
+  return true;
+}
+
+function violationFilterBar(prefix, f){
+  return `
+  <div class="flex flex-wrap items-end gap-2 p-3 bg-surface-container rounded-lg mb-3">
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Tanggal</label>
+      <input id="${prefix}-f-date" type="date" value="${f.date||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
+    </div>
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Bulan</label>
+      <select id="${prefix}-f-month" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none">
+        <option value="">Semua Bulan</option>
+        ${MONTHS_ID.map((m,i)=>`<option value="${String(i+1).padStart(2,"0")}" ${f.month===String(i+1).padStart(2,"0")?"selected":""}>${m}</option>`).join("")}
+      </select>
+    </div>
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Hari</label>
+      <select id="${prefix}-f-day" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none">
+        <option value="">Semua Hari</option>
+        ${HARI_OPTIONS.map(h=>`<option value="${h}" ${f.day===h?"selected":""}>${h}</option>`).join("")}
+      </select>
+    </div>
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Jam Dari</label>
+      <input id="${prefix}-f-timefrom" type="time" value="${f.timeFrom||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
+    </div>
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Jam Sampai</label>
+      <input id="${prefix}-f-timeto" type="time" value="${f.timeTo||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
+    </div>
+    <button onclick="resetViolationFilter('${prefix}')" class="text-xs font-semibold text-primary hover:underline px-2 py-1.5">Reset</button>
+  </div>`;
+}
+
+function readViolationFilterInputs(prefix){
+  return {
+    date: document.getElementById(`${prefix}-f-date`)?.value || "",
+    month: document.getElementById(`${prefix}-f-month`)?.value || "",
+    day: document.getElementById(`${prefix}-f-day`)?.value || "",
+    timeFrom: document.getElementById(`${prefix}-f-timefrom`)?.value || "",
+    timeTo: document.getElementById(`${prefix}-f-timeto`)?.value || "",
+  };
+}
+
+function applyViolationFilter(prefix){
+  const f = readViolationFilterInputs(prefix);
+  if(prefix==="teacher"){ teacherViolationFilter = f; renderTeacherLogViolationList(); }
+  else if(prefix==="student"){ studentViolationFilter = f; renderStudentViolationList(); }
+  else if(prefix==="parent"){ parentViolationFilter = f; renderParentViolationList(); }
+}
+
+function resetViolationFilter(prefix){
+  const empty = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+  if(prefix==="teacher"){ teacherViolationFilter = empty; renderTeacherLogViolation(); }
+  else if(prefix==="student"){ studentViolationFilter = empty; renderStudentDashboard(); }
+  else if(prefix==="parent"){ parentViolationFilter = empty; renderParentDashboard(); }
 }
 
 function durationDays(startIso, endIso){
@@ -3612,11 +3707,10 @@ async function deleteViolationType(id){
    ========================================================= */
 function renderTeacherLogViolation(){
   const el = document.getElementById("teacher-content");
-  const recent = [...DB.violationRecords].sort((a,b)=> new Date(b.date)-new Date(a.date));
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5 mb-6">
       <h4 class="font-display font-bold mb-3">Catat Pelanggaran Baru</h4>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         <select id="log-student" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none">
           <option value="" disabled selected>Pilih Siswa</option>
           ${DB.students.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
@@ -3626,39 +3720,52 @@ function renderTeacherLogViolation(){
           ${DB.violationTypes.map(t=>`<option value="${t.id}">${t.name} (${t.points} pts)</option>`).join("")}
         </select>
         <input id="log-date" type="date" value="${todayISO()}" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+        <input id="log-time" type="time" value="${nowHHMM()}" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
         <button onclick="logViolation()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Catat</button>
       </div>
       <input id="log-note" placeholder="Catatan tambahan (opsional)" class="w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
     </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
-      <div class="p-5 border-b border-outline-variant"><h4 class="font-display font-bold">Riwayat Pelanggaran</h4></div>
-      <div class="divide-y divide-outline-variant max-h-[420px] overflow-y-auto custom-scrollbar">
-        ${recent.map(r=>{
-          const s = studentById(r.studentId), t = typeById(r.typeId);
-          return `<div class="p-4 flex items-center justify-between gap-3">
-            <div>
-              <p class="font-semibold text-sm">${s?s.name:"(dihapus)"} <span class="text-on-surface-variant font-normal">— ${t?t.name:"(dihapus)"}</span></p>
-              <p class="text-xs text-on-surface-variant">${formatDate(r.date)} • dicatat oleh ${r.teacher}${r.note?` • ${r.note}`:""}</p>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
-              <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full">+${t?t.points:0} pts</span>
-              <button onclick="deleteViolationRecord('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
-            </div>
-          </div>`;
-        }).join("")}
-        ${recent.length===0?`<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada riwayat.</p>`:""}
+      <div class="p-5 border-b border-outline-variant">
+        <h4 class="font-display font-bold mb-3">Riwayat Pelanggaran</h4>
+        ${violationFilterBar("teacher", teacherViolationFilter)}
       </div>
+      <div id="teacher-violation-list" class="divide-y divide-outline-variant max-h-[420px] overflow-y-auto custom-scrollbar"></div>
     </div>
   `;
+  renderTeacherLogViolationList();
+}
+
+function renderTeacherLogViolationList(){
+  const listEl = document.getElementById("teacher-violation-list");
+  if(!listEl) return;
+  const recent = [...DB.violationRecords]
+    .filter(r=>violationMatchesFilter(r, teacherViolationFilter))
+    .sort((a,b)=> new Date(b.date)-new Date(a.date) || (b.time||"").localeCompare(a.time||""));
+  listEl.innerHTML = recent.map(r=>{
+    const s = studentById(r.studentId), t = typeById(r.typeId);
+    return `<div class="p-4 flex items-center justify-between gap-3">
+      <div>
+        <p class="font-semibold text-sm">${s?s.name:"(dihapus)"} <span class="text-on-surface-variant font-normal">— ${t?t.name:"(dihapus)"}</span></p>
+        ${t&&t.desc?`<p class="text-xs text-on-surface-variant">${t.desc}</p>`:""}
+        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)} • dicatat oleh ${r.teacher}${r.note?` • ${r.note}`:""}</p>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full">+${t?t.points:0} pts</span>
+        <button onclick="deleteViolationRecord('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
+      </div>
+    </div>`;
+  }).join("") || `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada riwayat.</p>`;
 }
 
 async function logViolation(){
   const studentId = document.getElementById("log-student").value;
   const typeId = document.getElementById("log-type").value;
   const date = document.getElementById("log-date").value;
+  const time = document.getElementById("log-time").value || nowHHMM();
   const note = document.getElementById("log-note").value.trim();
   if(!studentId || !typeId || !date){ toast("Lengkapi siswa, jenis pelanggaran, dan tanggal.", "error"); return; }
-  DB.violationRecords.push({ id: uid("vr"), studentId, typeId, date, teacher: teacherName||"Guru", note });
+  DB.violationRecords.push({ id: uid("vr"), studentId, typeId, date, time, teacher: teacherName||"Guru", note });
   await saveDB();
   toast("Pelanggaran berhasil dicatat.");
   renderTeacherLogViolation();
@@ -4211,16 +4318,19 @@ function renderParentDashboard(){
       </div>
 
       <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant flex flex-col">
-        <div class="p-5 border-b border-outline-variant flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-tertiary">assignment_late</span>
-            <h4 class="font-display font-bold">Laporan Perilaku</h4>
+        <div class="p-5 border-b border-outline-variant">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-tertiary">assignment_late</span>
+              <h4 class="font-display font-bold">Laporan Perilaku</h4>
+            </div>
+            <div class="flex bg-surface-container rounded-lg p-1 text-xs" id="parent-filter-tabs">
+              <button onclick="parentFilter('all')" data-f="all" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Semua</button>
+              <button onclick="parentFilter('week')" data-f="week" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Minggu Ini</button>
+              <button onclick="parentFilter('month')" data-f="month" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Bulan Ini</button>
+            </div>
           </div>
-          <div class="flex bg-surface-container rounded-lg p-1 text-xs" id="parent-filter-tabs">
-            <button onclick="parentFilter('all')" data-f="all" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Semua</button>
-            <button onclick="parentFilter('week')" data-f="week" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Minggu Ini</button>
-            <button onclick="parentFilter('month')" data-f="month" class="px-2.5 py-1 rounded-md font-semibold text-on-surface-variant transition-colors">Bulan Ini</button>
-          </div>
+          ${violationFilterBar("parent", parentViolationFilter)}
         </div>
         <div id="parent-violation-list" class="divide-y divide-outline-variant max-h-[420px] overflow-y-auto custom-scrollbar"></div>
       </div>
@@ -4229,28 +4339,38 @@ function renderParentDashboard(){
   parentFilter("all");
 }
 
+let parentQuickMode = "all";
+
 function parentFilter(mode){
+  parentQuickMode = mode;
   document.querySelectorAll("#parent-filter-tabs button").forEach(b=>{
     if(b.dataset.f===mode){ b.classList.add("bg-surface-container-lowest","shadow-sm","text-on-surface"); b.classList.remove("text-on-surface-variant"); }
     else { b.classList.remove("bg-surface-container-lowest","shadow-sm","text-on-surface"); b.classList.add("text-on-surface-variant"); }
   });
+  renderParentViolationList();
+}
+
+function renderParentViolationList(){
   const s = currentStudent;
+  const listEl = document.getElementById("parent-violation-list");
+  if(!listEl || !s) return;
   const now = new Date();
   let records = DB.violationRecords.filter(r=>r.studentId===s.id);
-  if(mode==="week"){
+  if(parentQuickMode==="week"){
     const weekAgo = new Date(); weekAgo.setDate(now.getDate()-7);
     records = records.filter(r=> new Date(r.date) >= weekAgo);
-  } else if(mode==="month"){
+  } else if(parentQuickMode==="month"){
     records = records.filter(r=> { const d=new Date(r.date); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); });
   }
-  records = records.sort((a,b)=> new Date(b.date)-new Date(a.date));
-  const listEl = document.getElementById("parent-violation-list");
+  records = records.filter(r=>violationMatchesFilter(r, parentViolationFilter));
+  records = records.sort((a,b)=> new Date(b.date)-new Date(a.date) || (b.time||"").localeCompare(a.time||""));
   listEl.innerHTML = records.length ? records.map(r=>{
     const t = typeById(r.typeId);
     return `<div class="px-5 py-3 flex items-center justify-between gap-3">
       <div>
         <p class="text-sm font-medium">${t?t.name:"(dihapus)"}</p>
-        <p class="text-xs text-on-surface-variant">${formatDate(r.date)}${r.teacher?` • ${r.teacher}`:""}</p>
+        ${t&&t.desc?`<p class="text-xs text-on-surface-variant">${t.desc}</p>`:""}
+        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)}${r.teacher?` • dicatat oleh ${r.teacher}`:""}${r.note?` • ${r.note}`:""}</p>
       </div>
       <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
     </div>`;
@@ -4260,7 +4380,6 @@ function parentFilter(mode){
 /* =========================================================
    PARENT: Jadwal Kunjungan (form besuk)
    ========================================================= */
-const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 
 function renderParentVisits(){
   const s = currentStudent;
@@ -4426,7 +4545,6 @@ function renderStudentDashboard(){
   const s = currentStudent;
   const el = document.getElementById("student-content");
   const pts = totalPoints(s.id);
-  const myRecords = DB.violationRecords.filter(r=>r.studentId===s.id).sort((a,b)=> new Date(b.date)-new Date(a.date));
 
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-6 flex flex-col md:flex-row items-center justify-between gap-4 mb-6">
@@ -4446,25 +4564,15 @@ function renderStudentDashboard(){
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant flex flex-col h-[420px]">
+      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant flex flex-col h-[480px]">
         <div class="p-5 border-b border-outline-variant">
-          <h4 class="font-display font-bold">Riwayat Pelanggaran Saya</h4>
+          <h4 class="font-display font-bold mb-3">Riwayat Pelanggaran Saya</h4>
+          ${violationFilterBar("student", studentViolationFilter)}
         </div>
-        <div class="flex-1 overflow-y-auto custom-scrollbar divide-y divide-outline-variant">
-          ${myRecords.length ? myRecords.map(r=>{
-            const t = typeById(r.typeId);
-            return `<div class="px-5 py-3 flex items-center justify-between gap-3">
-              <div>
-                <p class="text-sm font-medium">${t?t.name:"(dihapus)"}</p>
-                <p class="text-xs text-on-surface-variant">${formatDate(r.date)}</p>
-              </div>
-              <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
-            </div>`;
-          }).join("") : `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada pelanggaran. Pertahankan!</p>`}
-        </div>
+        <div id="student-violation-list" class="flex-1 overflow-y-auto custom-scrollbar divide-y divide-outline-variant"></div>
       </div>
 
-      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant flex flex-col h-[420px]">
+      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant flex flex-col h-[480px]">
         <div class="p-5 border-b border-outline-variant">
           <h4 class="font-display font-bold">Katalog Jenis Pelanggaran</h4>
           <p class="text-xs text-on-surface-variant mt-0.5">Daftar poin standar untuk setiap pelanggaran.</p>
@@ -4483,6 +4591,27 @@ function renderStudentDashboard(){
       </div>
     </div>
   `;
+  renderStudentViolationList();
+}
+
+function renderStudentViolationList(){
+  const s = currentStudent;
+  const listEl = document.getElementById("student-violation-list");
+  if(!listEl || !s) return;
+  const myRecords = DB.violationRecords.filter(r=>r.studentId===s.id)
+    .filter(r=>violationMatchesFilter(r, studentViolationFilter))
+    .sort((a,b)=> new Date(b.date)-new Date(a.date) || (b.time||"").localeCompare(a.time||""));
+  listEl.innerHTML = myRecords.length ? myRecords.map(r=>{
+    const t = typeById(r.typeId);
+    return `<div class="px-5 py-3 flex items-center justify-between gap-3">
+      <div>
+        <p class="text-sm font-medium">${t?t.name:"(dihapus)"}</p>
+        ${t&&t.desc?`<p class="text-xs text-on-surface-variant">${t.desc}</p>`:""}
+        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)} • dicatat oleh ${r.teacher}${r.note?` • ${r.note}`:""}</p>
+      </div>
+      <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
+    </div>`;
+  }).join("") : `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada pelanggaran untuk periode ini. Pertahankan!</p>`;
 }
 
 /* =========================================================

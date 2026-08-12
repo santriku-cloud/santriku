@@ -74,7 +74,7 @@ tailwind.config = {
   @keyframes fadeIn { from { opacity:0; transform: translateY(4px);} to { opacity:1; transform: translateY(0);} }
   /* Kotak isian teks (nama, keperluan, catatan, dll) melebar ke bawah saat teks panjang,
      bukan menggeser ke samping. */
-  textarea.autogrow-input { resize: none; overflow: hidden; line-height: 1.4; font-family: inherit; }
+  textarea.autogrow-input { resize: none; overflow: hidden; line-height: 1.4; font-family: inherit; box-sizing: border-box; min-height: 2.5rem; }
 </style>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen">
@@ -4106,14 +4106,17 @@ function openEditStudentModal(id){
   document.getElementById("edit-student-kelas").value = s.kelas || "";
   document.getElementById("edit-student-email").value = s.parentEmail || "";
   document.getElementById("edit-student-error").classList.add("hidden");
-  // pastikan tinggi textarea menyesuaikan isi yang baru dimuat
-  ["edit-student-name","edit-student-nik","edit-student-code","edit-student-kelas"].forEach(id=>{
-    const el = document.getElementById(id);
-    if(el) autoGrow(el);
-  });
   const modal = document.getElementById("edit-student-modal");
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  // Panggil autoGrow SETELAH modal ditampilkan, supaya tinggi textarea
+  // dihitung dari ukuran sebenarnya (bukan 0 saat masih tersembunyi).
+  requestAnimationFrame(()=>{
+    ["edit-student-name","edit-student-nik","edit-student-code","edit-student-kelas"].forEach(fid=>{
+      const el = document.getElementById(fid);
+      if(el) autoGrow(el);
+    });
+  });
 }
 
 function closeEditStudentModal(){

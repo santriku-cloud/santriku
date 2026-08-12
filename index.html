@@ -184,7 +184,7 @@ tailwind.config = {
     <input id="payment-amount-student-id" type="hidden"/>
     <input id="payment-amount-month-key" type="hidden"/>
     <p class="text-xs text-on-surface-variant mb-1">Harus dibayar bulan ini: <span id="payment-amount-due" class="font-semibold text-on-surface"></span></p>
-    <label class="text-xs font-semibold text-on-surface-variant">Jumlah yang sudah dibayar</label>
+    <label class="text-xs font-semibold text-on-surface-variant">Jumlah yang sudah dibayar <span class="font-normal">(ribuan, cth. 200 = Rp200.000)</span></label>
     <input id="payment-amount-input" type="number" min="0" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
     <p class="text-[11px] text-on-surface-variant mt-1.5">Kalau orang tua hanya bayar sebagian, isi nominal yang benar-benar diterima di sini — kekurangannya akan tampil otomatis di lingkaran status.</p>
     <div class="flex gap-3 mt-5">
@@ -3158,7 +3158,9 @@ function monthKeysForRevenueFilter(){
 }
 
 function formatRupiah(n){
-  return "Rp" + (n||0).toLocaleString("id-ID");
+  // Nominal yang diketik guru (mis. 250) dianggap dalam satuan ribu Rupiah,
+  // supaya cukup ketik "250" untuk Rp250.000, tidak perlu ketik nol-nol.
+  return "Rp" + (((n||0) * 1000)).toLocaleString("id-ID");
 }
 
 /* =========================================================
@@ -4338,7 +4340,7 @@ function renderTeacherPayments(){
           <div id="payments-revenue-picker" class="hidden absolute right-0 top-full mt-2 z-20 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-3 w-72">
             <div class="flex gap-1 mb-3">
               <button onclick="selectPaymentsRevenueMode('all')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='all'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Semua</button>
-              <button onclick="selectPaymentsRevenueMode('month')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='month'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">1 Bulan</button>
+              <button onclick="selectPaymentsRevenueMode('month')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='month'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Bulan Ini</button>
               <button onclick="selectPaymentsRevenueMode('range')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='range'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Rentang</button>
             </div>
             ${rf.mode === "month" ? `
@@ -4380,7 +4382,7 @@ function renderTeacherPayments(){
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
               <th class="p-3 sticky left-0 bg-surface z-10">Siswa</th>
-              <th class="p-3 text-center">Bayaran/Bln</th>
+              <th class="p-3 text-center">Bayaran/Bln <span class="normal-case font-normal text-[10px] block">(ribuan, cth. 250 = Rp250.000)</span></th>
               ${months.map(m=>`<th class="p-3 text-center">${MONTHS_ID[parseInt(m.split("-")[1])-1]}</th>`).join("")}
             </tr>
           </thead>
@@ -4407,7 +4409,7 @@ function renderTeacherPayments(){
                           title="${paid?'Lunas':'Belum Lunas'} — klik untuk ubah">
                           <span class="material-symbols-outlined text-base">${paid?'check':'close'}</span>
                         </button>
-                        ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${shortfall.toLocaleString("id-ID")}</span>` : ""}
+                        ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${(shortfall*1000).toLocaleString("id-ID")}</span>` : ""}
                       </div>
                       <button onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
                         <span class="material-symbols-outlined text-[16px]">expand_more</span>
@@ -4424,7 +4426,7 @@ function renderTeacherPayments(){
   `;
 }
 
-const PAYMENTS_REVENUE_LABEL = { all: "Semua", month: "1 Bulan", range: "Rentang" };
+const PAYMENTS_REVENUE_LABEL = { all: "Semua", month: "Bulan Ini", range: "Rentang" };
 
 function togglePaymentsYearPicker(event){
   event.stopPropagation();

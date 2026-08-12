@@ -4168,6 +4168,8 @@ function exportLaporanPDF(key){
    ========================================================= */
 function renderTeacherStudents(){
   const el = document.getElementById("teacher-content");
+  const prevScrollBox = document.getElementById("students-table-scroll");
+  const prevScrollLeft = prevScrollBox ? prevScrollBox.scrollLeft : 0;
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
       <div class="p-5 border-b border-outline-variant">
@@ -4181,7 +4183,7 @@ function renderTeacherStudents(){
           <button onclick="addStudent()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Tambah</button>
         </div>
       </div>
-      <div class="overflow-x-auto custom-scrollbar">
+      <div id="students-table-scroll" class="overflow-x-auto custom-scrollbar">
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
@@ -4209,6 +4211,8 @@ function renderTeacherStudents(){
       </div>
     </div>
   `;
+  const newScrollBox = document.getElementById("students-table-scroll");
+  if(newScrollBox) newScrollBox.scrollLeft = prevScrollLeft;
 }
 
 async function addStudent(){
@@ -4304,6 +4308,8 @@ async function saveEditStudent(){
    ========================================================= */
 function renderTeacherPayments(){
   const el = document.getElementById("teacher-content");
+  const prevScrollBox = document.getElementById("payments-table-scroll");
+  const prevScrollLeft = prevScrollBox ? prevScrollBox.scrollLeft : 0;
   const months = Array.from({length:12}, (_,i)=> monthKey(paymentsSelectedYear, i));
   const revenueKeys = monthKeysForRevenueFilter();
   const revenueTotal = totalRevenueForMonths(revenueKeys);
@@ -4377,7 +4383,7 @@ function renderTeacherPayments(){
         </div>
       </div>
 
-      <div class="overflow-x-auto custom-scrollbar">
+      <div id="payments-table-scroll" class="overflow-x-auto custom-scrollbar">
         <table class="w-full text-left text-sm min-w-[1050px]">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
@@ -4404,14 +4410,14 @@ function renderTeacherPayments(){
                   return `<td class="p-2 text-center align-top">
                     <div class="flex flex-col items-center gap-0.5">
                       <div class="relative">
-                        <button onclick="togglePayment('${s.id}','${m}')"
+                        <button onmousedown="event.preventDefault()" onclick="togglePayment('${s.id}','${m}')"
                           class="w-8 h-8 rounded-full flex items-center justify-center mx-auto transition-colors ${paid ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container'}"
                           title="${paid?'Lunas':'Belum Lunas'} — klik untuk ubah">
                           <span class="material-symbols-outlined text-base">${paid?'check':'close'}</span>
                         </button>
                         ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${(shortfall*1000).toLocaleString("id-ID")}</span>` : ""}
                       </div>
-                      <button onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
+                      <button onmousedown="event.preventDefault()" onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
                         <span class="material-symbols-outlined text-[16px]">expand_more</span>
                       </button>
                     </div>
@@ -4424,6 +4430,8 @@ function renderTeacherPayments(){
       </div>
     </div>
   `;
+  const newScrollBox = document.getElementById("payments-table-scroll");
+  if(newScrollBox) newScrollBox.scrollLeft = prevScrollLeft;
 }
 
 const PAYMENTS_REVENUE_LABEL = { all: "Semua", month: "Bulan Ini", range: "Rentang" };

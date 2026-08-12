@@ -173,6 +173,27 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ ATUR NOMINAL DIBAYAR MODAL ============ -->
+<div id="payment-amount-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closePaymentAmountModal()">
+  <div class="relative w-full max-w-xs fade-in bg-surface-container-lowest rounded-2xl p-6">
+    <button onclick="closePaymentAmountModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-1">Nominal Dibayar</h4>
+    <p id="payment-amount-title" class="text-sm text-on-surface-variant mb-4"></p>
+    <input id="payment-amount-student-id" type="hidden"/>
+    <input id="payment-amount-month-key" type="hidden"/>
+    <p class="text-xs text-on-surface-variant mb-1">Harus dibayar bulan ini: <span id="payment-amount-due" class="font-semibold text-on-surface"></span></p>
+    <label class="text-xs font-semibold text-on-surface-variant">Jumlah yang sudah dibayar</label>
+    <input id="payment-amount-input" type="number" min="0" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+    <p class="text-[11px] text-on-surface-variant mt-1.5">Kalau orang tua hanya bayar sebagian, isi nominal yang benar-benar diterima di sini — kekurangannya akan tampil otomatis di lingkaran status.</p>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closePaymentAmountModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button onclick="savePaymentAmount()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ EDIT JENIS PELANGGARAN MODAL ============ -->
 <div id="edit-vt-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditViolationTypeModal()">
   <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
@@ -2862,6 +2883,14 @@ let dashboardSelectedMonthIndex = new Date().getMonth();
 let dashboardSelectedYear = CURRENT_YEAR;
 let dashboardStudentFilter = "all"; // all | pondok | pulang_ortu | pulang_siswa
 let dashboardViolationPeriod = { type: "week", from: "", to: "" }; // today|week|month|year|all|custom
+let paymentsSelectedYear = CURRENT_YEAR;
+// mode: 'all' | 'month' | 'range'
+let paymentsRevenueFilter = {
+  mode: "all",
+  year: CURRENT_YEAR, monthIndex: new Date().getMonth(),
+  fromYear: CURRENT_YEAR, fromMonthIndex: 0,
+  toYear: CURRENT_YEAR, toMonthIndex: 11,
+};
 
 const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 
@@ -3058,6 +3087,78 @@ function setPaymentStatus(studentId, mKey, status){
   let p = DB.payments.find(p=>p.studentId===studentId && p.month===mKey);
   if (p) p.status = status;
   else DB.payments.push({ id: uid("pay"), studentId, month: mKey, status });
+}
+
+/* Nominal yang HARUS dibayar bulan itu = "Bayaran/Bln" milik siswa (berlaku sama tiap bulan). */
+function studentMonthlyFee(studentId){
+  const s = studentById(studentId);
+  return s && s.monthlyFee ? s.monthlyFee : 0;
+}
+
+/* Nominal yang SUDAH dibayar untuk bulan tertentu. Kalau belum pernah diisi manual,
+   defaultnya sama dengan Bayaran/Bln (dianggap dibayar penuh). */
+function paymentAmountPaid(studentId, mKey){
+  const p = DB.payments.find(p=>p.studentId===studentId && p.month===mKey);
+  if(p && p.amountPaid != null) return p.amountPaid;
+  return studentMonthlyFee(studentId);
+}
+
+async function updateMonthlyFee(studentId, value){
+  const s = studentById(studentId);
+  if(!s) return;
+  const v = parseInt(value, 10);
+  s.monthlyFee = (isNaN(v) || v < 0) ? 0 : v;
+  await saveDB();
+  renderTeacherPayments();
+}
+
+async function setPaymentAmountPaid(studentId, mKey, amount){
+  let p = DB.payments.find(p=>p.studentId===studentId && p.month===mKey);
+  const v = Math.max(0, parseInt(amount,10) || 0);
+  if(p) p.amountPaid = v;
+  else DB.payments.push({ id: uid("pay"), studentId, month: mKey, status: "unpaid", amountPaid: v });
+  await saveDB();
+}
+
+/* Total uang yang benar-benar masuk (hanya dihitung dari bulan yang sudah ditandai Lunas). */
+function totalRevenueForMonths(monthKeys){
+  let total = 0;
+  DB.students.forEach(s=>{
+    monthKeys.forEach(mKey=>{
+      if(paymentStatus(s.id, mKey) === "paid"){
+        total += paymentAmountPaid(s.id, mKey);
+      }
+    });
+  });
+  return total;
+}
+
+function monthKeysForRevenueFilter(){
+  const f = paymentsRevenueFilter;
+  if(f.mode === "month"){
+    return [monthKey(f.year, f.monthIndex)];
+  }
+  if(f.mode === "range"){
+    const keys = [];
+    let y = f.fromYear, m = f.fromMonthIndex;
+    const endY = f.toYear, endM = f.toMonthIndex;
+    // batasi supaya tidak infinite loop kalau rentang terbalik
+    let guard = 0;
+    while((y < endY || (y === endY && m <= endM)) && guard < 1000){
+      keys.push(monthKey(y, m));
+      m++; if(m>11){ m=0; y++; }
+      guard++;
+    }
+    return keys;
+  }
+  // 'all' — seluruh bulan dari seluruh data pembayaran yang ada
+  const allKeys = new Set();
+  DB.payments.forEach(p=> allKeys.add(p.month));
+  return [...allKeys];
+}
+
+function formatRupiah(n){
+  return "Rp" + (n||0).toLocaleString("id-ID");
 }
 
 /* =========================================================
@@ -3402,6 +3503,8 @@ document.addEventListener("click", function(e){
     ["dashboard-student-card","dashboard-student-picker"],
     ["dashboard-unpaid-card","dashboard-month-picker"],
     ["dashboard-violation-card","dashboard-violation-picker"],
+    ["payments-year-card","payments-year-picker"],
+    ["payments-revenue-card","payments-revenue-picker"],
   ].forEach(([cardId,pickerId])=>{
     const card = document.getElementById(cardId);
     const picker = document.getElementById(pickerId);
@@ -4199,18 +4302,85 @@ async function saveEditStudent(){
    ========================================================= */
 function renderTeacherPayments(){
   const el = document.getElementById("teacher-content");
-  const months = Array.from({length:12}, (_,i)=> monthKey(CURRENT_YEAR, i));
+  const months = Array.from({length:12}, (_,i)=> monthKey(paymentsSelectedYear, i));
+  const revenueKeys = monthKeysForRevenueFilter();
+  const revenueTotal = totalRevenueForMonths(revenueKeys);
+  const rf = paymentsRevenueFilter;
+
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
-      <div class="p-5 border-b border-outline-variant flex justify-between items-center">
-        <h4 class="font-display font-bold">Status Pembayaran Bulanan ${CURRENT_YEAR}</h4>
-        <p class="text-xs text-on-surface-variant">Klik status untuk mengubah</p>
+      <div class="p-5 border-b border-outline-variant flex flex-wrap justify-between items-center gap-4">
+        <div class="relative" id="payments-year-card">
+          <h4 class="font-display font-bold flex items-center gap-1">
+            Status Pembayaran Bulanan
+            <button onclick="togglePaymentsYearPicker(event)" class="inline-flex items-center gap-0.5 text-primary hover:underline">
+              ${paymentsSelectedYear}
+              <span class="material-symbols-outlined text-[18px]">expand_more</span>
+            </button>
+          </h4>
+          <p class="text-xs text-on-surface-variant">Klik lingkaran untuk ubah status • Klik ▾ untuk atur nominal dibayar</p>
+          <div id="payments-year-picker" class="hidden absolute left-0 top-full mt-2 z-20 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-2 flex gap-1 max-w-[280px] overflow-x-auto">
+            ${YEAR_OPTIONS.map(y=>`
+              <button onclick="selectPaymentsYear(${y})" class="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-md transition-colors ${y===paymentsSelectedYear ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container"}">${y}</button>
+            `).join("")}
+          </div>
+        </div>
+
+        <div class="relative" id="payments-revenue-card">
+          <button onclick="togglePaymentsRevenuePicker(event)" class="flex items-center gap-2 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl px-4 py-2.5 hover:shadow-md transition-all">
+            <span class="material-symbols-outlined text-[20px]">account_balance_wallet</span>
+            <span class="text-left">
+              <span class="block text-[10px] uppercase font-semibold opacity-80">Uang Masuk (${PAYMENTS_REVENUE_LABEL[rf.mode]})</span>
+              <span class="block text-sm font-bold">${formatRupiah(revenueTotal)}</span>
+            </span>
+            <span class="material-symbols-outlined text-[18px]">expand_more</span>
+          </button>
+          <div id="payments-revenue-picker" class="hidden absolute right-0 top-full mt-2 z-20 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-3 w-72">
+            <div class="flex gap-1 mb-3">
+              <button onclick="selectPaymentsRevenueMode('all')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='all'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Semua</button>
+              <button onclick="selectPaymentsRevenueMode('month')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='month'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">1 Bulan</button>
+              <button onclick="selectPaymentsRevenueMode('range')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${rf.mode==='range'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Rentang</button>
+            </div>
+            ${rf.mode === "month" ? `
+              <div class="grid grid-cols-2 gap-2 mb-1">
+                <select onchange="setPaymentsRevenueMonthField('year', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===rf.year?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setPaymentsRevenueMonthField('monthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===rf.monthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+            ` : ""}
+            ${rf.mode === "range" ? `
+              <p class="text-[11px] text-on-surface-variant mb-1">Dari</p>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <select onchange="setPaymentsRevenueRangeField('fromYear', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===rf.fromYear?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setPaymentsRevenueRangeField('fromMonthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===rf.fromMonthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+              <p class="text-[11px] text-on-surface-variant mb-1">Sampai</p>
+              <div class="grid grid-cols-2 gap-2">
+                <select onchange="setPaymentsRevenueRangeField('toYear', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===rf.toYear?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setPaymentsRevenueRangeField('toMonthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===rf.toMonthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+            ` : ""}
+          </div>
+        </div>
       </div>
+
       <div class="overflow-x-auto custom-scrollbar">
-        <table class="w-full text-left text-sm min-w-[900px]">
+        <table class="w-full text-left text-sm min-w-[1050px]">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
               <th class="p-3 sticky left-0 bg-surface z-10">Siswa</th>
+              <th class="p-3 text-center">Bayaran/Bln</th>
               ${months.map(m=>`<th class="p-3 text-center">${MONTHS_ID[parseInt(m.split("-")[1])-1]}</th>`).join("")}
             </tr>
           </thead>
@@ -4218,19 +4388,35 @@ function renderTeacherPayments(){
             ${DB.students.map(s=>`
               <tr class="border-t border-outline-variant">
                 <td class="p-3 font-medium sticky left-0 bg-surface-container-lowest">${s.name}</td>
+                <td class="p-3 text-center">
+                  <input type="number" min="0" placeholder="0" value="${s.monthlyFee || ""}"
+                    onchange="updateMonthlyFee('${s.id}', this.value)"
+                    class="w-20 text-center px-2 py-1 rounded-full border border-outline-variant text-xs font-semibold bg-tertiary-fixed text-on-tertiary-fixed focus:border-primary outline-none"/>
+                </td>
                 ${months.map(m=>{
                   const st = paymentStatus(s.id, m);
                   const paid = st==="paid";
-                  return `<td class="p-3 text-center">
-                    <button onclick="togglePayment('${s.id}','${m}')"
-                      class="w-8 h-8 rounded-full flex items-center justify-center mx-auto transition-colors ${paid ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container'}"
-                      title="${paid?'Lunas':'Belum Lunas'} — klik untuk ubah">
-                      <span class="material-symbols-outlined text-base">${paid?'check':'close'}</span>
-                    </button>
+                  const due = studentMonthlyFee(s.id);
+                  const amountPaid = paymentAmountPaid(s.id, m);
+                  const shortfall = paid ? Math.max(0, due - amountPaid) : 0;
+                  return `<td class="p-2 text-center align-top">
+                    <div class="flex flex-col items-center gap-0.5">
+                      <div class="relative">
+                        <button onclick="togglePayment('${s.id}','${m}')"
+                          class="w-8 h-8 rounded-full flex items-center justify-center mx-auto transition-colors ${paid ? 'bg-secondary-container text-on-secondary-container' : 'bg-error-container text-on-error-container'}"
+                          title="${paid?'Lunas':'Belum Lunas'} — klik untuk ubah">
+                          <span class="material-symbols-outlined text-base">${paid?'check':'close'}</span>
+                        </button>
+                        ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${shortfall.toLocaleString("id-ID")}</span>` : ""}
+                      </div>
+                      <button onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
+                        <span class="material-symbols-outlined text-[16px]">expand_more</span>
+                      </button>
+                    </div>
                   </td>`;
                 }).join("")}
               </tr>`).join("")}
-            ${DB.students.length===0?`<tr><td colspan="13" class="p-6 text-center text-on-surface-variant">Belum ada data siswa. Tambahkan di menu Data Siswa.</td></tr>`:""}
+            ${DB.students.length===0?`<tr><td colspan="14" class="p-6 text-center text-on-surface-variant">Belum ada data siswa. Tambahkan di menu Data Siswa.</td></tr>`:""}
           </tbody>
         </table>
       </div>
@@ -4238,11 +4424,81 @@ function renderTeacherPayments(){
   `;
 }
 
+const PAYMENTS_REVENUE_LABEL = { all: "Semua", month: "1 Bulan", range: "Rentang" };
+
+function togglePaymentsYearPicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("payments-year-picker");
+  if(picker) picker.classList.toggle("hidden");
+}
+function selectPaymentsYear(y){
+  paymentsSelectedYear = y;
+  renderTeacherPayments();
+}
+
+function togglePaymentsRevenuePicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("payments-revenue-picker");
+  if(picker) picker.classList.toggle("hidden");
+}
+function selectPaymentsRevenueMode(mode){
+  paymentsRevenueFilter.mode = mode;
+  renderTeacherPayments();
+  // buka lagi popover-nya setelah render supaya user bisa langsung atur bulan/rentang
+  const picker = document.getElementById("payments-revenue-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+function setPaymentsRevenueMonthField(field, value){
+  paymentsRevenueFilter[field] = parseInt(value,10);
+  renderTeacherPayments();
+  const picker = document.getElementById("payments-revenue-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+function setPaymentsRevenueRangeField(field, value){
+  paymentsRevenueFilter[field] = parseInt(value,10);
+  renderTeacherPayments();
+  const picker = document.getElementById("payments-revenue-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+
 async function togglePayment(studentId, mKey){
   const cur = paymentStatus(studentId, mKey);
-  setPaymentStatus(studentId, mKey, cur==="paid" ? "unpaid" : "paid");
+  const newStatus = cur==="paid" ? "unpaid" : "paid";
+  setPaymentStatus(studentId, mKey, newStatus);
+  if(newStatus === "paid"){
+    const p = DB.payments.find(p=>p.studentId===studentId && p.month===mKey);
+    if(p && p.amountPaid == null) p.amountPaid = studentMonthlyFee(studentId);
+  }
   await saveDB();
   renderTeacherPayments();
+}
+
+function openPaymentAmountModal(studentId, mKey){
+  const s = studentById(studentId);
+  if(!s) return;
+  const monthLabel = MONTHS_ID[parseInt(mKey.split("-")[1])-1] + " " + mKey.split("-")[0];
+  document.getElementById("payment-amount-student-id").value = studentId;
+  document.getElementById("payment-amount-month-key").value = mKey;
+  document.getElementById("payment-amount-title").textContent = `${s.name} — ${monthLabel}`;
+  document.getElementById("payment-amount-due").textContent = formatRupiah(studentMonthlyFee(studentId));
+  document.getElementById("payment-amount-input").value = paymentAmountPaid(studentId, mKey);
+  const modal = document.getElementById("payment-amount-modal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+function closePaymentAmountModal(){
+  const modal = document.getElementById("payment-amount-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+async function savePaymentAmount(){
+  const studentId = document.getElementById("payment-amount-student-id").value;
+  const mKey = document.getElementById("payment-amount-month-key").value;
+  const amount = document.getElementById("payment-amount-input").value;
+  await setPaymentAmountPaid(studentId, mKey, amount);
+  closePaymentAmountModal();
+  renderTeacherPayments();
+  toast("Nominal dibayar diperbarui.");
 }
 
 /* =========================================================

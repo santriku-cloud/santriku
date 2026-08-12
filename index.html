@@ -2733,6 +2733,13 @@ const EMAILJS_CONFIG_IZIN = {
   serviceId: "service_pd98naw",
   templateId: "template_pov9q9c",
 };
+// Jadwal Kunjungan juga pakai akun EmailJS kedua (service & public key sama
+// dengan Izin), tapi template BEDA -> isi templateId setelah dibuat di EmailJS.
+const EMAILJS_CONFIG_KUNJUNGAN = {
+  publicKey: "U2b6lXHrHF7GLbfQl",
+  serviceId: "service_pd98naw",
+  templateId: "template_sfnrn3b",
+};
 function emailjsReady(templateId){
   // Basic setup (public key + service) harus ada dulu.
   if(!window.emailjs) return false;
@@ -2999,6 +3006,34 @@ async function notifyIzinEmail(student, keperluan, startDate, endDate, requested
   }catch(err){
     console.error(err);
     toast("Gagal mengirim email notifikasi izin.", "error");
+  }
+}
+
+async function notifyVisitEmail(student, day, time, keperluan, requestedBy){
+  const adminEmail = DB.settings && DB.settings.adminEmail;
+  if(!adminEmail) return;
+  if(!window.emailjs || !EMAILJS_CONFIG_KUNJUNGAN.templateId || EMAILJS_CONFIG_KUNJUNGAN.templateId.startsWith("GANTI_")){
+    toast("Notifikasi email Kunjungan belum dikonfigurasi (lihat EMAILJS_CONFIG_KUNJUNGAN di kode).", "error");
+    return;
+  }
+  try{
+    await window.emailjs.send(
+      EMAILJS_CONFIG_KUNJUNGAN.serviceId,
+      EMAILJS_CONFIG_KUNJUNGAN.templateId,
+      {
+        to_email: adminEmail,
+        student_name: student ? student.name : "-",
+        keperluan: keperluan || "-",
+        visit_day: day || "-",
+        visit_time: time || "-",
+        requested_by: requestedBy || "-",
+      },
+      { publicKey: EMAILJS_CONFIG_KUNJUNGAN.publicKey }
+    );
+    toast(`Notifikasi jadwal kunjungan terkirim ke admin.`);
+  }catch(err){
+    console.error(err);
+    toast("Gagal mengirim email notifikasi kunjungan.", "error");
   }
 }
 
@@ -3384,6 +3419,7 @@ function statusBadge(status){
    ========================================================= */
 async function addVisitRequest({ studentId, day, time, keperluan, requestedBy }){
   DB.visits.push({ id: uid("vis"), studentId, day, time, keperluan, requestedBy, status: "pending", createdAt: todayISO() });
+  notifyVisitEmail(studentById(studentId), day, time, keperluan, requestedBy);
   await saveDB();
 }
 

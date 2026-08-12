@@ -173,6 +173,36 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ EDIT JENIS PELANGGARAN MODAL ============ -->
+<div id="edit-vt-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditViolationTypeModal()">
+  <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
+    <button onclick="closeEditViolationTypeModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-4">Edit Jenis Pelanggaran</h4>
+    <input id="edit-vt-id" type="hidden"/>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Nama pelanggaran</label>
+        <textarea id="edit-vt-name" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Poin</label>
+        <input id="edit-vt-points" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Deskripsi singkat (opsional)</label>
+        <textarea id="edit-vt-desc" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <p id="edit-vt-error" class="hidden text-error text-xs"></p>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeEditViolationTypeModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button onclick="saveEditViolationType()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ ID CARD MODAL (Kartu Siswa) ============ -->
 <div id="id-card-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeIdCardModal()">
   <div class="relative w-full max-w-xs fade-in">
@@ -4235,6 +4265,7 @@ function renderTeacherViolationTypes(){
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <span class="text-xs font-semibold bg-tertiary-fixed text-on-tertiary-fixed px-3 py-1 rounded-full">${t.points} pts</span>
+              <button onclick="openEditViolationTypeModal('${t.id}')" class="text-primary hover:underline text-xs font-semibold">Edit</button>
               <button onclick="deleteViolationType('${t.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
             </div>
           </div>`).join("")}
@@ -4261,6 +4292,53 @@ async function deleteViolationType(id){
   DB.violationRecords = DB.violationRecords.filter(r=>r.typeId!==id);
   await saveDB();
   toast("Jenis pelanggaran dihapus.");
+  renderTeacherViolationTypes();
+}
+
+function openEditViolationTypeModal(id){
+  const t = DB.violationTypes.find(x=>x.id===id);
+  if(!t) return;
+  document.getElementById("edit-vt-id").value = t.id;
+  document.getElementById("edit-vt-name").value = t.name || "";
+  document.getElementById("edit-vt-points").value = t.points || "";
+  document.getElementById("edit-vt-desc").value = t.desc || "";
+  document.getElementById("edit-vt-error").classList.add("hidden");
+  const modal = document.getElementById("edit-vt-modal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  requestAnimationFrame(()=>{
+    ["edit-vt-name","edit-vt-desc"].forEach(fid=>{
+      const el = document.getElementById(fid);
+      if(el) autoGrow(el);
+    });
+  });
+}
+
+function closeEditViolationTypeModal(){
+  const modal = document.getElementById("edit-vt-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+async function saveEditViolationType(){
+  const id = document.getElementById("edit-vt-id").value;
+  const t = DB.violationTypes.find(x=>x.id===id);
+  if(!t) return;
+  const name = document.getElementById("edit-vt-name").value.trim();
+  const points = parseInt(document.getElementById("edit-vt-points").value);
+  const desc = document.getElementById("edit-vt-desc").value.trim();
+  const errEl = document.getElementById("edit-vt-error");
+  if(!name || !points || points<=0){
+    errEl.textContent = "Nama dan poin (angka > 0) wajib diisi.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  t.name = name;
+  t.points = points;
+  t.desc = desc;
+  await saveDB();
+  toast("Jenis pelanggaran diperbarui.");
+  closeEditViolationTypeModal();
   renderTeacherViolationTypes();
 }
 

@@ -72,6 +72,9 @@ tailwind.config = {
   [x-cloak] { display: none !important; }
   .fade-in { animation: fadeIn .25s ease; }
   @keyframes fadeIn { from { opacity:0; transform: translateY(4px);} to { opacity:1; transform: translateY(0);} }
+  /* Kotak isian teks (nama, keperluan, catatan, dll) melebar ke bawah saat teks panjang,
+     bukan menggeser ke samping. */
+  textarea.autogrow-input { resize: none; overflow: hidden; line-height: 1.4; font-family: inherit; }
 </style>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen">
@@ -128,6 +131,44 @@ tailwind.config = {
     <div class="flex gap-3 mt-5">
       <button onclick="closeTeacherProfileModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
       <button id="teacher-profile-save-btn" onclick="saveTeacherProfile()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ EDIT SISWA MODAL ============ -->
+<div id="edit-student-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditStudentModal()">
+  <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
+    <button onclick="closeEditStudentModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-4">Edit Data Siswa</h4>
+    <input id="edit-student-id" type="hidden"/>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Nama</label>
+        <textarea id="edit-student-name" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">NIK</label>
+        <textarea id="edit-student-nik" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Kode Siswa</label>
+        <textarea id="edit-student-code" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Kelas</label>
+        <textarea id="edit-student-kelas" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Email Orang Tua (opsional)</label>
+        <input id="edit-student-email" type="email" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      </div>
+      <p id="edit-student-error" class="hidden text-error text-xs"></p>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeEditStudentModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button onclick="saveEditStudent()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
     </div>
   </div>
 </div>
@@ -232,7 +273,7 @@ tailwind.config = {
     <div id="teacher-login-form">
       <p class="text-sm text-on-surface-variant mb-4">Masuk dengan nama dan password yang pernah Anda buat.</p>
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Nama Guru</label>
-      <input id="teacher-login-name" type="text" placeholder="cth. Ms. Davis" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3"/>
+      <textarea id="teacher-login-name" rows="1" placeholder="cth. Ms. Davis" class="autogrow-input w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3" oninput="autoGrow(this)"></textarea>
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Password</label>
       <input id="teacher-login-password" type="password" placeholder="Password" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-2"/>
       <p id="teacher-login-error" class="text-error text-sm mb-2 hidden"></p>
@@ -245,7 +286,7 @@ tailwind.config = {
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Email</label>
       <input id="teacher-register-email" type="email" placeholder="nama@email.com" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3"/>
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Nama Guru</label>
-      <input id="teacher-register-name" type="text" placeholder="cth. Ms. Davis" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3"/>
+      <textarea id="teacher-register-name" rows="1" placeholder="cth. Ms. Davis" class="autogrow-input w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3" oninput="autoGrow(this)"></textarea>
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Password</label>
       <input id="teacher-register-password" type="password" placeholder="Minimal 6 karakter" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-3"/>
       <label class="block text-xs font-semibold text-on-surface-variant mb-1">Ulangi Password</label>
@@ -266,9 +307,9 @@ tailwind.config = {
     <h2 class="font-display text-xl font-bold mb-1">Portal Orang Tua</h2>
     <p class="text-sm text-on-surface-variant mb-5">Masukkan nama dan NIK anak Anda.</p>
     <label class="block text-xs font-semibold text-on-surface-variant mb-1">Nama Anak</label>
-    <input id="parent-name-input" type="text" placeholder="cth. Alex Johnson" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-4"/>
+    <textarea id="parent-name-input" rows="1" placeholder="cth. Alex Johnson" class="autogrow-input w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-4" oninput="autoGrow(this)"></textarea>
     <label class="block text-xs font-semibold text-on-surface-variant mb-1">NIK Anak</label>
-    <input id="parent-nik-input" type="text" placeholder="16 digit NIK" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-2"/>
+    <textarea id="parent-nik-input" rows="1" placeholder="16 digit NIK" class="autogrow-input w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-2" oninput="autoGrow(this)"></textarea>
     <p id="parent-login-error" class="text-error text-sm mb-2 hidden">Nama atau NIK tidak cocok dengan data kami.</p>
     <button onclick="parentLogin()" class="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all mt-2">Lihat Data Anak</button>
   </div>
@@ -284,7 +325,7 @@ tailwind.config = {
     <h2 class="font-display text-xl font-bold mb-1">Portal Siswa</h2>
     <p class="text-sm text-on-surface-variant mb-5">Masukkan nama dan kode siswa kamu.</p>
     <label class="block text-xs font-semibold text-on-surface-variant mb-1">Nama Siswa</label>
-    <input id="student-name-input" type="text" placeholder="cth. Alex Johnson" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-4"/>
+    <textarea id="student-name-input" rows="1" placeholder="cth. Alex Johnson" class="autogrow-input w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-4" oninput="autoGrow(this)"></textarea>
     <label class="block text-xs font-semibold text-on-surface-variant mb-1">Kode Siswa</label>
     <input id="student-code-input" type="password" placeholder="Kode siswa" class="w-full px-4 py-3 rounded-lg border border-outline-variant focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none mb-2"/>
     <p id="student-login-error" class="text-error text-sm mb-2 hidden">Nama atau kode tidak cocok dengan data kami.</p>
@@ -2920,6 +2961,20 @@ function toast(msg, type="ok"){
   setTimeout(()=>{ el.style.opacity="0"; el.style.transition="opacity .3s"; setTimeout(()=>el.remove(),300); }, 2200);
 }
 
+// Kotak isian teks (textarea.autogrow-input) otomatis melebar ke bawah mengikuti
+// panjang teks, bukan menggeser ke samping seperti input satu baris biasa.
+function autoGrow(el){
+  el.style.height = "auto";
+  el.style.height = el.scrollHeight + "px";
+}
+// Pasang juga lewat event delegation, supaya elemen yang dibuat lewat innerHTML
+// (render ulang halaman) tetap otomatis melebar walau oninput tidak sempat terpasang manual.
+document.addEventListener("input", (e)=>{
+  if(e.target && e.target.classList && e.target.classList.contains("autogrow-input")){
+    autoGrow(e.target);
+  }
+});
+
 /* =========================================================
    Navigation
    ========================================================= */
@@ -3978,10 +4033,10 @@ function renderTeacherStudents(){
       <div class="p-5 border-b border-outline-variant">
         <h4 class="font-display font-bold mb-3">Tambah Siswa Baru</h4>
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
-          <input id="new-student-name" placeholder="Nama siswa" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
-          <input id="new-student-nik" placeholder="NIK (16 digit)" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
-          <input id="new-student-code" placeholder="Kode siswa" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
-          <input id="new-student-kelas" placeholder="Kelas (cth. VIII-B)" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          <textarea id="new-student-name" rows="1" placeholder="Nama siswa" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+          <textarea id="new-student-nik" rows="1" placeholder="NIK (16 digit)" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+          <textarea id="new-student-code" rows="1" placeholder="Kode siswa" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+          <textarea id="new-student-kelas" rows="1" placeholder="Kelas (cth. VIII-B)" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
           <input id="new-student-email" type="email" placeholder="Email orang tua (opsional)" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
           <button onclick="addStudent()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Tambah</button>
         </div>
@@ -4004,6 +4059,7 @@ function renderTeacherStudents(){
                 <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-semibold ${totalPoints(s.id)>0?'bg-error-container text-on-error-container':'bg-secondary-container/40 text-on-secondary-container'}">${totalPoints(s.id)} pts</span></td>
                 <td class="p-4 text-right whitespace-nowrap">
                   <button onclick="showStudentBarcode('${s.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Barcode</button>
+                  <button onclick="openEditStudentModal('${s.id}')" class="text-secondary hover:underline text-xs font-semibold mr-3">Edit</button>
                   <button onclick="deleteStudent('${s.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
                 </td>
               </tr>`).join("")}
@@ -4037,6 +4093,66 @@ async function deleteStudent(id){
   DB.violationRecords = DB.violationRecords.filter(r=>r.studentId!==id);
   await saveDB();
   toast("Siswa dihapus.");
+  renderTeacherStudents();
+}
+
+function openEditStudentModal(id){
+  const s = studentById(id);
+  if(!s) return;
+  document.getElementById("edit-student-id").value = s.id;
+  document.getElementById("edit-student-name").value = s.name || "";
+  document.getElementById("edit-student-nik").value = s.nik || "";
+  document.getElementById("edit-student-code").value = s.code || "";
+  document.getElementById("edit-student-kelas").value = s.kelas || "";
+  document.getElementById("edit-student-email").value = s.parentEmail || "";
+  document.getElementById("edit-student-error").classList.add("hidden");
+  // pastikan tinggi textarea menyesuaikan isi yang baru dimuat
+  ["edit-student-name","edit-student-nik","edit-student-code","edit-student-kelas"].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) autoGrow(el);
+  });
+  const modal = document.getElementById("edit-student-modal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+
+function closeEditStudentModal(){
+  const modal = document.getElementById("edit-student-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+async function saveEditStudent(){
+  const id = document.getElementById("edit-student-id").value;
+  const s = studentById(id);
+  if(!s) return;
+  const name = document.getElementById("edit-student-name").value.trim();
+  const nik = document.getElementById("edit-student-nik").value.trim();
+  const code = document.getElementById("edit-student-code").value.trim();
+  const kelas = document.getElementById("edit-student-kelas").value.trim();
+  const parentEmail = document.getElementById("edit-student-email").value.trim();
+  const errEl = document.getElementById("edit-student-error");
+  if(!name || !nik || !code){
+    errEl.textContent = "Nama, NIK, dan Kode siswa wajib diisi.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  // Cek duplikasi kode/NIK ke siswa lain (selain dirinya sendiri)
+  const dupCode = DB.students.some(x=>x.id!==id && x.code===code);
+  const dupNik = DB.students.some(x=>x.id!==id && x.nik===nik);
+  if(dupCode || dupNik){
+    errEl.textContent = dupCode ? "Kode siswa sudah dipakai siswa lain." : "NIK sudah dipakai siswa lain.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  s.name = name;
+  s.nik = nik;
+  s.code = code;
+  s.kelas = kelas;
+  s.parentEmail = parentEmail;
+  await saveDB();
+  toast("Data siswa diperbarui.");
+  closeEditStudentModal();
   renderTeacherStudents();
 }
 
@@ -4101,11 +4217,11 @@ function renderTeacherViolationTypes(){
       <div class="p-5 border-b border-outline-variant">
         <h4 class="font-display font-bold mb-3">Tambah Jenis Pelanggaran</h4>
         <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          <input id="new-vt-name" placeholder="Nama pelanggaran" class="sm:col-span-2 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          <textarea id="new-vt-name" rows="1" placeholder="Nama pelanggaran" class="autogrow-input sm:col-span-2 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
           <input id="new-vt-points" type="number" min="1" placeholder="Poin" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
           <button onclick="addViolationType()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Tambah</button>
         </div>
-        <input id="new-vt-desc" placeholder="Deskripsi singkat (opsional)" class="w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+        <textarea id="new-vt-desc" rows="1" placeholder="Deskripsi singkat (opsional)" class="autogrow-input w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
       </div>
       <div class="divide-y divide-outline-variant">
         ${DB.violationTypes.map(t=>`
@@ -4167,7 +4283,7 @@ function renderTeacherLogViolation(){
         <input id="log-time" type="time" value="${nowHHMM()}" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
         <button onclick="logViolation()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Catat</button>
       </div>
-      <input id="log-note" placeholder="Catatan tambahan (opsional)" class="w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      <textarea id="log-note" rows="1" placeholder="Catatan tambahan (opsional)" class="autogrow-input w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
     </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
       <div class="p-5 border-b border-outline-variant">
@@ -4893,7 +5009,7 @@ function renderParentVisits(){
         </select>
         <input id="visit-time" type="time" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
       </div>
-      <input id="visit-keperluan" placeholder="Keperluan kunjungan (cth. Mengantar bekal & menjenguk)" class="w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      <textarea id="visit-keperluan" rows="1" placeholder="Keperluan kunjungan (cth. Mengantar bekal & menjenguk)" class="autogrow-input w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
       <button onclick="submitVisit()" class="w-full mt-3 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Kirim Permohonan Kunjungan</button>
     </div>
     <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant">
@@ -4934,7 +5050,7 @@ function renderParentIzin(){
     <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-5 mb-6">
       <h4 class="font-display font-bold mb-1">Ajukan Izin untuk ${s.name}</h4>
       <p class="text-xs text-on-surface-variant mb-4">Isi keperluan dan rentang tanggal izin.</p>
-      <input id="parent-izin-keperluan" placeholder="Izin untuk apa? (cth. Sakit / Acara keluarga)" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-3"/>
+      <textarea id="parent-izin-keperluan" rows="1" placeholder="Izin untuk apa? (cth. Sakit / Acara keluarga)" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-3" oninput="autoGrow(this)"></textarea>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-semibold text-on-surface-variant mb-1">Mulai Tanggal</label>
@@ -5122,7 +5238,7 @@ function renderStudentIzin(){
     <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-5 mb-6">
       <h4 class="font-display font-bold mb-1">Ajukan Izin</h4>
       <p class="text-xs text-on-surface-variant mb-4">Isi keperluan dan rentang tanggal izin kamu.</p>
-      <input id="student-izin-keperluan" placeholder="Izin untuk apa? (cth. Sakit / Acara keluarga)" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-3"/>
+      <textarea id="student-izin-keperluan" rows="1" placeholder="Izin untuk apa? (cth. Sakit / Acara keluarga)" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-3" oninput="autoGrow(this)"></textarea>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div>
           <label class="block text-xs font-semibold text-on-surface-variant mb-1">Mulai Tanggal</label>

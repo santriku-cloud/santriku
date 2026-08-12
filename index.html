@@ -2725,7 +2725,13 @@ const EMAILJS_CONFIG = {
   serviceId: "service_u672mnw",
   templateViolation: "template_czphta9",
   templateUnpaid: "template_cm2e9e3",
-  templateIzin: "GANTI_TEMPLATE_ID_IZIN",
+};
+// Izin Santri pakai akun EmailJS TERPISAH (akun kedua), karena akun pertama
+// sudah mencapai batas 2 template di paket gratisnya.
+const EMAILJS_CONFIG_IZIN = {
+  publicKey: "U2b6lXHrHF7GLbfQl",
+  serviceId: "service_pd98naw",
+  templateId: "template_pov9q9c",
 };
 function emailjsReady(templateId){
   // Basic setup (public key + service) harus ada dulu.
@@ -2971,15 +2977,29 @@ async function notifyViolationEmail(student, type, date, time, note){
 async function notifyIzinEmail(student, keperluan, startDate, endDate, requestedBy){
   const adminEmail = DB.settings && DB.settings.adminEmail;
   if(!adminEmail) return;
-  const ok = await sendEmail(EMAILJS_CONFIG.templateIzin, {
-    to_email: adminEmail,
-    student_name: student ? student.name : "-",
-    keperluan: keperluan || "-",
-    start_date: formatDate(startDate),
-    end_date: formatDate(endDate),
-    requested_by: requestedBy || "-",
-  });
-  if(ok) toast(`Notifikasi permohonan izin terkirim ke admin.`);
+  if(!window.emailjs || !EMAILJS_CONFIG_IZIN.serviceId || EMAILJS_CONFIG_IZIN.serviceId.startsWith("GANTI_")){
+    toast("Notifikasi email Izin belum dikonfigurasi (lihat EMAILJS_CONFIG_IZIN di kode).", "error");
+    return;
+  }
+  try{
+    await window.emailjs.send(
+      EMAILJS_CONFIG_IZIN.serviceId,
+      EMAILJS_CONFIG_IZIN.templateId,
+      {
+        to_email: adminEmail,
+        student_name: student ? student.name : "-",
+        keperluan: keperluan || "-",
+        start_date: formatDate(startDate),
+        end_date: formatDate(endDate),
+        requested_by: requestedBy || "-",
+      },
+      { publicKey: EMAILJS_CONFIG_IZIN.publicKey } // pakai akun EmailJS kedua, terpisah dari akun utama
+    );
+    toast(`Notifikasi permohonan izin terkirim ke admin.`);
+  }catch(err){
+    console.error(err);
+    toast("Gagal mengirim email notifikasi izin.", "error");
+  }
 }
 
 async function notifyUnpaidEmail(student, monthLabel){

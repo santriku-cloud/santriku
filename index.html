@@ -203,6 +203,26 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ PHOTO CROP MODAL (geser & perbesar foto sebelum dipasang) ============ -->
+<div id="photo-crop-modal" class="hidden fixed inset-0 bg-black/70 z-[999] items-center justify-center px-4">
+  <div class="relative w-full max-w-xs fade-in bg-surface-container-lowest rounded-2xl p-5">
+    <h4 class="font-display font-bold text-lg mb-1">Atur Foto</h4>
+    <p class="text-xs text-on-surface-variant mb-4">Geser untuk memindahkan, gunakan slider untuk memperbesar/memperkecil.</p>
+    <div id="photo-crop-frame" class="relative mx-auto overflow-hidden bg-surface-container touch-none select-none" style="width:260px;height:260px;">
+      <img id="photo-crop-img" src="" draggable="false" class="absolute pointer-events-none" style="transform-origin:center center;"/>
+    </div>
+    <div class="flex items-center gap-3 mt-4">
+      <span class="material-symbols-outlined text-on-surface-variant text-[18px]">image</span>
+      <input id="photo-crop-zoom" type="range" min="1" max="4" step="0.01" value="1" class="flex-1" oninput="onPhotoCropZoomInput(this.value)"/>
+      <span class="material-symbols-outlined text-on-surface-variant text-[22px]">image</span>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closePhotoCropModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button onclick="confirmPhotoCrop()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Pasang</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ ID CARD MODAL (Kartu Siswa) ============ -->
 <div id="id-card-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeIdCardModal()">
   <div class="relative w-full max-w-xs fade-in">
@@ -3711,41 +3731,26 @@ async function downloadIdCard(){
 function onIdCardPhotoSelected(event){
   const file = event.target.files && event.target.files[0];
   const studentId = document.getElementById("id-card-modal").dataset.studentId;
+  event.target.value = ""; // reset supaya file yang sama bisa dipilih lagi nanti
   if(!file || !studentId) return;
-  const reader = new FileReader();
-  reader.onload = function(e){
-    const img = new Image();
-    img.onload = async function(){
-      // kompres & crop persegi supaya ukuran data tetap kecil
-      const size = 320;
-      const canvas = document.createElement("canvas");
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext("2d");
-      const minSide = Math.min(img.width, img.height);
-      const sx = (img.width - minSide) / 2, sy = (img.height - minSide) / 2;
-      ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      const s = studentById(studentId);
-      if(!s) return;
-      s.photo = dataUrl;
-      await saveDB();
-      const cardImg = document.getElementById("id-card-photo");
-      const cardIni = document.getElementById("id-card-initials");
-      cardImg.src = dataUrl;
-      cardImg.classList.remove("hidden");
-      cardIni.classList.add("hidden");
-      document.getElementById("id-card-photo-delete-btn").classList.remove("hidden");
-      hideIdCardPhotoMenu();
-      updateStudentProfileButton();
-      const parentDashBtn = document.querySelector('#parent-nav button[data-pnav="dashboard"]');
-      if(typeof renderParentDashboard === "function" && parentDashBtn && parentDashBtn.classList.contains("bg-primary")) renderParentDashboard();
-      if(typeof renderTeacherStudents === "function" && document.getElementById("teacher-content")) renderTeacherStudents();
-      toast("Foto profil berhasil diperbarui.");
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
-  event.target.value = "";
+  hideIdCardPhotoMenu();
+  openPhotoCropModal(file, async (dataUrl)=>{
+    const s = studentById(studentId);
+    if(!s) return;
+    s.photo = dataUrl;
+    await saveDB();
+    const cardImg = document.getElementById("id-card-photo");
+    const cardIni = document.getElementById("id-card-initials");
+    cardImg.src = dataUrl;
+    cardImg.classList.remove("hidden");
+    cardIni.classList.add("hidden");
+    document.getElementById("id-card-photo-delete-btn").classList.remove("hidden");
+    updateStudentProfileButton();
+    const parentDashBtn = document.querySelector('#parent-nav button[data-pnav="dashboard"]');
+    if(typeof renderParentDashboard === "function" && parentDashBtn && parentDashBtn.classList.contains("bg-primary")) renderParentDashboard();
+    if(typeof renderTeacherStudents === "function" && document.getElementById("teacher-content")) renderTeacherStudents();
+    toast("Foto profil berhasil diperbarui.");
+  });
 }
 
 function showStudentBarcode(studentId){
@@ -4718,6 +4723,169 @@ function closeTeacherProfileModal(){
   document.getElementById("teacher-profile-modal").classList.remove("flex");
 }
 
+/* =========================================================
+   PHOTO CROP MODAL — geser (pan) & zoom foto sebelum dipasang
+   Dipakai oleh: foto profil guru/siswa, foto kartu ID siswa.
+   ========================================================= */
+const photoCrop = {
+  naturalW: 0, naturalH: 0,
+  baseW: 0, baseH: 0,     // ukuran gambar (px) saat menutupi frame di zoom minimum
+  frameSize: 260,
+  scale: 1, minScale: 1, maxScale: 4,
+  offsetX: 0, offsetY: 0,
+  onConfirm: null,
+  pointers: new Map(),
+  dragLast: null,
+  pinchStartDist: null,
+  pinchStartScale: null,
+};
+
+function openPhotoCropModal(file, onConfirm, shape){
+  if(!file) return;
+  const frameEl = document.getElementById("photo-crop-frame");
+  frameEl.style.borderRadius = (shape === "circle") ? "9999px" : "16px";
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      photoCrop.naturalW = img.naturalWidth;
+      photoCrop.naturalH = img.naturalHeight;
+      const cover = photoCrop.frameSize / Math.min(img.naturalWidth, img.naturalHeight);
+      photoCrop.baseW = img.naturalWidth * cover;
+      photoCrop.baseH = img.naturalHeight * cover;
+      photoCrop.scale = 1;
+      photoCrop.offsetX = 0;
+      photoCrop.offsetY = 0;
+      photoCrop.onConfirm = onConfirm;
+
+      const imgEl = document.getElementById("photo-crop-img");
+      imgEl.src = e.target.result;
+      imgEl.style.width = photoCrop.baseW + "px";
+      imgEl.style.height = photoCrop.baseH + "px";
+      imgEl.style.left = "50%";
+      imgEl.style.top = "50%";
+      imgEl.style.marginLeft = (-photoCrop.baseW/2) + "px";
+      imgEl.style.marginTop = (-photoCrop.baseH/2) + "px";
+      document.getElementById("photo-crop-zoom").value = 1;
+      applyPhotoCropTransform();
+
+      const modal = document.getElementById("photo-crop-modal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    };
+    img.onerror = ()=> toast("Gagal memuat foto.", "error");
+    img.src = e.target.result;
+  };
+  reader.onerror = ()=> toast("Gagal membaca file.", "error");
+  reader.readAsDataURL(file);
+}
+
+function closePhotoCropModal(){
+  const modal = document.getElementById("photo-crop-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+  photoCrop.onConfirm = null;
+  photoCrop.pointers.clear();
+}
+
+function clampPhotoCropOffsets(){
+  const dispW = photoCrop.baseW * photoCrop.scale;
+  const dispH = photoCrop.baseH * photoCrop.scale;
+  const maxX = Math.max(0, (dispW - photoCrop.frameSize) / 2);
+  const maxY = Math.max(0, (dispH - photoCrop.frameSize) / 2);
+  photoCrop.offsetX = Math.min(maxX, Math.max(-maxX, photoCrop.offsetX));
+  photoCrop.offsetY = Math.min(maxY, Math.max(-maxY, photoCrop.offsetY));
+}
+
+function applyPhotoCropTransform(){
+  clampPhotoCropOffsets();
+  const imgEl = document.getElementById("photo-crop-img");
+  imgEl.style.transform = `translate(${photoCrop.offsetX}px, ${photoCrop.offsetY}px) scale(${photoCrop.scale})`;
+}
+
+function onPhotoCropZoomInput(val){
+  photoCrop.scale = Math.min(photoCrop.maxScale, Math.max(photoCrop.minScale, parseFloat(val)));
+  applyPhotoCropTransform();
+}
+
+function photoCropPointerDist(pts){
+  const a = pts[0], b = pts[1];
+  return Math.hypot(a.x-b.x, a.y-b.y);
+}
+
+(function setupPhotoCropGestures(){
+  document.addEventListener("DOMContentLoaded", ()=>{
+    const frame = document.getElementById("photo-crop-frame");
+    if(!frame) return;
+    frame.addEventListener("pointerdown", (e)=>{
+      frame.setPointerCapture(e.pointerId);
+      photoCrop.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if(photoCrop.pointers.size === 1){
+        photoCrop.dragLast = { x: e.clientX, y: e.clientY };
+      } else if(photoCrop.pointers.size === 2){
+        const pts = [...photoCrop.pointers.values()];
+        photoCrop.pinchStartDist = photoCropPointerDist(pts);
+        photoCrop.pinchStartScale = photoCrop.scale;
+      }
+    });
+    frame.addEventListener("pointermove", (e)=>{
+      if(!photoCrop.pointers.has(e.pointerId)) return;
+      photoCrop.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if(photoCrop.pointers.size === 1 && photoCrop.dragLast){
+        const dx = e.clientX - photoCrop.dragLast.x;
+        const dy = e.clientY - photoCrop.dragLast.y;
+        photoCrop.offsetX += dx;
+        photoCrop.offsetY += dy;
+        photoCrop.dragLast = { x: e.clientX, y: e.clientY };
+        applyPhotoCropTransform();
+      } else if(photoCrop.pointers.size === 2 && photoCrop.pinchStartDist){
+        const pts = [...photoCrop.pointers.values()];
+        const dist = photoCropPointerDist(pts);
+        const newScale = photoCrop.pinchStartScale * (dist / photoCrop.pinchStartDist);
+        photoCrop.scale = Math.min(photoCrop.maxScale, Math.max(photoCrop.minScale, newScale));
+        document.getElementById("photo-crop-zoom").value = photoCrop.scale.toFixed(2);
+        applyPhotoCropTransform();
+      }
+    });
+    const endPointer = (e)=>{
+      photoCrop.pointers.delete(e.pointerId);
+      if(photoCrop.pointers.size < 2){ photoCrop.pinchStartDist = null; }
+      if(photoCrop.pointers.size === 1){
+        const remaining = [...photoCrop.pointers.values()][0];
+        photoCrop.dragLast = remaining ? { x: remaining.x, y: remaining.y } : null;
+      }
+      if(photoCrop.pointers.size === 0){ photoCrop.dragLast = null; }
+    };
+    frame.addEventListener("pointerup", endPointer);
+    frame.addEventListener("pointercancel", endPointer);
+    frame.addEventListener("pointerleave", (e)=>{ if(photoCrop.pointers.size<=1) endPointer(e); });
+  });
+})();
+
+function confirmPhotoCrop(){
+  if(!photoCrop.onConfirm) return;
+  const OUT = 480;
+  const displayedScale = (photoCrop.baseW / photoCrop.naturalW) * photoCrop.scale;
+  const frame = photoCrop.frameSize;
+  const srcW = frame / displayedScale;
+  const srcH = frame / displayedScale;
+  let srcX = (photoCrop.naturalW/2) - ((frame/2 + photoCrop.offsetX) / displayedScale);
+  let srcY = (photoCrop.naturalH/2) - ((frame/2 + photoCrop.offsetY) / displayedScale);
+  srcX = Math.max(0, Math.min(photoCrop.naturalW - srcW, srcX));
+  srcY = Math.max(0, Math.min(photoCrop.naturalH - srcH, srcY));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = OUT; canvas.height = OUT;
+  const ctx = canvas.getContext("2d");
+  const imgEl = document.getElementById("photo-crop-img");
+  ctx.drawImage(imgEl, srcX, srcY, srcW, srcH, 0, 0, OUT, OUT);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+
+  const cb = photoCrop.onConfirm;
+  closePhotoCropModal();
+  cb(dataUrl);
+}
+
 function resizeImageFile(file, maxSize){
   return new Promise((resolve, reject)=>{
     const reader = new FileReader();
@@ -4742,15 +4910,16 @@ function resizeImageFile(file, maxSize){
 
 function handleProfilePhotoChange(input){
   const file = input.files && input.files[0];
+  input.value = ""; // reset supaya file yang sama bisa dipilih lagi nanti
   if(!file) return;
-  resizeImageFile(file, 300).then(dataUrl=>{
+  openPhotoCropModal(file, (dataUrl)=>{
     window.__profilePhotoDataUrl = dataUrl;
     const preview = document.getElementById("profile-photo-preview");
     const placeholder = document.getElementById("profile-photo-placeholder");
     preview.src = dataUrl;
     preview.classList.remove("hidden");
     placeholder.classList.add("hidden");
-  }).catch(()=> toast("Gagal memuat foto.", "error"));
+  }, "circle");
 }
 
 async function saveTeacherProfile(){

@@ -2727,8 +2727,17 @@ const EMAILJS_CONFIG = {
   templateUnpaid: "template_cm2e9e3",
   templateIzin: "GANTI_TEMPLATE_ID_IZIN",
 };
-function emailjsReady(){
-  return window.emailjs && !Object.values(EMAILJS_CONFIG).some(v => v.startsWith("GANTI_"));
+function emailjsReady(templateId){
+  // Basic setup (public key + service) harus ada dulu.
+  if(!window.emailjs) return false;
+  if(!EMAILJS_CONFIG.publicKey || EMAILJS_CONFIG.publicKey.startsWith("GANTI_")) return false;
+  if(!EMAILJS_CONFIG.serviceId || EMAILJS_CONFIG.serviceId.startsWith("GANTI_")) return false;
+  // Kalau dipanggil dengan templateId spesifik, cek template itu saja —
+  // supaya notif lain tetap jalan walau satu jenis template belum diisi.
+  if(templateId !== undefined){
+    return !!templateId && !templateId.startsWith("GANTI_");
+  }
+  return true;
 }
 function emailjsInit(){
   if(window.emailjs && EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.startsWith("GANTI_")){
@@ -2937,7 +2946,7 @@ function setPaymentStatus(studentId, mKey, status){
    NOTIFIKASI EMAIL (via EmailJS)
    ========================================================= */
 function sendEmail(templateId, params){
-  if(!emailjsReady()){
+  if(!emailjsReady(templateId)){
     toast("Notifikasi email belum dikonfigurasi (lihat EMAILJS_CONFIG di kode).", "error");
     return Promise.resolve(false);
   }

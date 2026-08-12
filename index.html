@@ -4351,10 +4351,11 @@ function renderTeacherLogViolation(){
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5 mb-6">
       <h4 class="font-display font-bold mb-3">Catat Pelanggaran Baru</h4>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        <select id="log-student" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none">
-          <option value="" disabled selected>Pilih Siswa</option>
-          ${DB.students.map(s=>`<option value="${s.id}">${s.name}</option>`).join("")}
-        </select>
+        <div class="relative">
+          <input id="log-student-search" type="text" autocomplete="off" placeholder="Cari & pilih siswa..." onfocus="openStudentDropdown()" oninput="filterStudentDropdown()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          <input type="hidden" id="log-student" value=""/>
+          <div id="log-student-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg max-h-56 overflow-y-auto custom-scrollbar"></div>
+        </div>
         <div class="relative">
           <input id="log-type-search" type="text" autocomplete="off" placeholder="Cari jenis pelanggaran..." onfocus="openViolationTypeDropdown()" oninput="filterViolationTypeDropdown()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
           <input type="hidden" id="log-type" value=""/>
@@ -4398,6 +4399,56 @@ function renderTeacherLogViolationList(){
     </div>`;
   }).join("") || `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada riwayat.</p>`;
 }
+
+/* Combobox "cari & pilih" untuk siswa di halaman Catat Pelanggaran */
+function studentDropdownItems(query){
+  const q = (query||"").trim().toLowerCase();
+  if(!q) return DB.students;
+  return DB.students.filter(s => s.name.toLowerCase().includes(q));
+}
+
+function renderStudentDropdown(query){
+  const dd = document.getElementById("log-student-dropdown");
+  if(!dd) return;
+  const items = studentDropdownItems(query);
+  dd.innerHTML = items.length ? items.map(s=>`
+    <button type="button" onclick="selectStudent('${s.id}')" class="w-full text-left px-3 py-2 text-sm hover:bg-surface-container transition-colors">${s.name}${s.kelas?` <span class="text-on-surface-variant">(${s.kelas})</span>`:""}</button>
+  `).join("") : `<p class="px-3 py-2 text-sm text-on-surface-variant">Tidak ditemukan.</p>`;
+}
+
+function openStudentDropdown(){
+  const dd = document.getElementById("log-student-dropdown");
+  const search = document.getElementById("log-student-search");
+  if(!dd || !search) return;
+  renderStudentDropdown(search.value);
+  dd.classList.remove("hidden");
+}
+
+function filterStudentDropdown(){
+  const hidden = document.getElementById("log-student");
+  if(hidden) hidden.value = ""; // batalkan pilihan lama selama masih mengetik
+  const search = document.getElementById("log-student-search");
+  renderStudentDropdown(search ? search.value : "");
+  const dd = document.getElementById("log-student-dropdown");
+  if(dd) dd.classList.remove("hidden");
+}
+
+function selectStudent(studentId){
+  const s = studentById(studentId);
+  const hidden = document.getElementById("log-student");
+  const search = document.getElementById("log-student-search");
+  const dd = document.getElementById("log-student-dropdown");
+  if(hidden) hidden.value = studentId;
+  if(search) search.value = s ? s.name : "";
+  if(dd) dd.classList.add("hidden");
+}
+
+document.addEventListener("click", function(e){
+  const dd = document.getElementById("log-student-dropdown");
+  const search = document.getElementById("log-student-search");
+  if(!dd || !search || dd.classList.contains("hidden")) return;
+  if(!dd.contains(e.target) && e.target !== search) dd.classList.add("hidden");
+});
 
 /* Combobox "cari & pilih" untuk jenis pelanggaran di halaman Catat Pelanggaran */
 function violationTypeDropdownItems(query){

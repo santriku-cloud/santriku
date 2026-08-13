@@ -5014,19 +5014,19 @@ function renderTeacherPayments(){
           <input id="payments-search-input" type="text" value="${escapeHtml(paymentsMoneySearch)}" placeholder="Cari nama siswa..." oninput="filterPaymentsBulananTable(this.value)" class="w-full pl-9 pr-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
         </div>
       </div>
-      <div id="payments-table-scroll" class="overflow-x-auto custom-scrollbar">
+      <div id="payments-table-scroll" class="overflow-auto custom-scrollbar max-h-[70vh] border-t border-outline-variant">
         <table class="w-full text-left text-sm min-w-[1050px]">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
-              <th class="p-3 sticky left-0 bg-surface z-10">Siswa</th>
-              <th class="p-3 text-center">Bayaran/Bln <span class="normal-case font-normal text-[10px] block">(ribuan, cth. 250 = Rp250.000)</span></th>
-              ${months.map(m=>`<th class="p-3 text-center">${MONTHS_ID[parseInt(m.split("-")[1])-1]}</th>`).join("")}
+              <th class="p-3 sticky left-0 top-0 z-20 bg-surface [transform:translateZ(0)]">Siswa</th>
+              <th class="p-3 text-center sticky top-0 z-10 bg-surface [transform:translateZ(0)]">Bayaran/Bln <span class="normal-case font-normal text-[10px] block">(ribuan, cth. 250 = Rp250.000)</span></th>
+              ${months.map(m=>`<th class="p-3 text-center sticky top-0 z-10 bg-surface [transform:translateZ(0)]">${MONTHS_ID[parseInt(m.split("-")[1])-1]}</th>`).join("")}
             </tr>
           </thead>
           <tbody>
             ${DB.students.map(s=>`
               <tr class="border-t border-outline-variant" data-sname="${escapeHtml(s.name.toLowerCase())}" style="${paymentsMoneySearch && !s.name.toLowerCase().includes(paymentsMoneySearch.trim().toLowerCase()) ? 'display:none;' : ''}">
-                <td class="p-3 font-medium sticky left-0 bg-surface-container-lowest">${s.name}</td>
+                <td class="p-3 font-medium sticky left-0 z-10 bg-surface-container-lowest whitespace-nowrap [transform:translateZ(0)]">${s.name}</td>
                 <td class="p-3 text-center">
                   <input type="number" min="0" placeholder="0" value="${s.monthlyFee || ""}"
                     onchange="updateMonthlyFee('${s.id}', this.value)"

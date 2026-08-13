@@ -158,7 +158,7 @@ tailwind.config = {
       </div>
       <div>
         <label class="text-xs font-semibold text-on-surface-variant">Kelas</label>
-        <textarea id="edit-student-kelas" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+        <select id="edit-student-kelas" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none bg-surface-container-lowest"></select>
       </div>
       <div>
         <label class="text-xs font-semibold text-on-surface-variant">Email Orang Tua (opsional)</label>
@@ -2930,7 +2930,8 @@ function seedData(){
   const visits = [];
   const izinRequests = [];
   const settings = { parentToken: genToken() };
-  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, settings };
+  const classList = ["X", "XI", "XII"];
+  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, settings, classList };
 }
 
 function genToken(){
@@ -2966,6 +2967,14 @@ async function loadDB(){
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
       let needSave = false;
+      if (!DB.classList) {
+        // Migrasi data lama: bentuk daftar kelas dari nilai "kelas" yang sudah
+        // terlanjur diketik bebas pada data siswa, supaya tidak ada data yang hilang.
+        const existing = new Set();
+        (DB.students || []).forEach(s => { if (s.kelas) existing.add(s.kelas); });
+        DB.classList = existing.size ? [...existing].sort((a, b) => a.localeCompare(b, "id", { numeric: true })) : ["X", "XI", "XII"];
+        needSave = true;
+      }
       DB.students.forEach(s=>{ if(!s.token){ s.token = genToken(); needSave = true; } });
       if (needSave) await saveDB();
       return;
@@ -4120,19 +4129,6 @@ const LAPORAN_TYPES = [
 // State pilihan form Laporan — day/month/year kosong ("") berarti "Semua".
 let laporanState = { type: "siswa", dateCategory: "all", date: "", dateFrom: "", dateTo: "", kelasCategory: "all", kelasSelected: [], format: "excel" };
 
-/* Ambil "tingkatan" dari teks kelas bebas (mis. "VIII-B" -> "VIII", "X TKJ 1" -> "X") */
-function kelasTingkatan(kelasStr){
-  if(!kelasStr) return "";
-  const s = String(kelasStr).trim();
-  const m = s.split(/[\s-]+/)[0];
-  return m || s;
-}
-function availableTingkatanList(){
-  const set = new Set();
-  DB.students.forEach(s=>{ const t = kelasTingkatan(s.kelas); if(t) set.add(t); });
-  return [...set].sort();
-}
-
 function renderTeacherLaporan(){
   const el = document.getElementById("teacher-content");
   const ls = laporanState;
@@ -4164,24 +4160,24 @@ function renderTeacherLaporan(){
     </div>` : ""}
   `;
 
-  const tingkatanList = availableTingkatanList();
+  const kelasListLaporan = availableKelasList();
   const kelasCategoryHtml = `
     <div class="sm:col-span-2">
       <label class="text-xs font-medium text-on-surface-variant block mb-1">Kategori</label>
       <select onchange="setLaporanKelasCategory(this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest">
         <option value="all" ${ls.kelasCategory==="all"?"selected":""}>Semua</option>
-        <option value="pilih" ${ls.kelasCategory==="pilih"?"selected":""}>Pilih Tingkatan</option>
+        <option value="pilih" ${ls.kelasCategory==="pilih"?"selected":""}>Pilih Kelas</option>
       </select>
     </div>
     ${ls.kelasCategory==="pilih" ? `
     <div class="sm:col-span-2">
-      <label class="text-xs font-medium text-on-surface-variant block mb-1">Tingkatan</label>
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Kelas</label>
       <div class="flex flex-wrap gap-2">
-        ${tingkatanList.length ? tingkatanList.map(t=>`
+        ${kelasListLaporan.length ? kelasListLaporan.map(t=>`
           <label class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition-colors ${ls.kelasSelected.includes(t)?"bg-primary text-on-primary border-primary":"border-outline-variant text-on-surface-variant"}">
-            <input type="checkbox" class="hidden" ${ls.kelasSelected.includes(t)?"checked":""} onchange="toggleLaporanKelas('${t}')"/>
+            <input type="checkbox" class="hidden" ${ls.kelasSelected.includes(t)?"checked":""} onchange="toggleLaporanKelas('${t.replace(/'/g,"\\'")}')"/>
             ${t}
-          </label>`).join("") : `<p class="text-xs text-on-surface-variant italic">Belum ada data kelas.</p>`}
+          </label>`).join("") : `<p class="text-xs text-on-surface-variant italic">Belum ada data kelas. Tambahkan kelas di menu Data Siswa.</p>`}
       </div>
     </div>` : ""}
   `;
@@ -4192,7 +4188,7 @@ function renderTeacherLaporan(){
     else if(ls.dateCategory==="single") helperText = "Hanya data pada tanggal yang dipilih yang akan ditampilkan.";
     else helperText = "Data akan difilter sesuai rentang tanggal. Kosongkan salah satu untuk rentang terbuka.";
   } else if(isSiswa){
-    helperText = ls.kelasCategory==="pilih" ? "Hanya siswa dari tingkatan yang dicentang yang akan ditampilkan." : "Semua siswa dari semua tingkatan akan ditampilkan.";
+    helperText = ls.kelasCategory==="pilih" ? "Hanya siswa dari kelas yang dicentang yang akan ditampilkan." : "Semua siswa dari semua kelas akan ditampilkan.";
   } else {
     helperText = "Data ini tidak memiliki filter tambahan, seluruh data akan ditampilkan.";
   }
@@ -4290,7 +4286,7 @@ function laporanRows(key, filter){
   if(key === "siswa"){
     let list = DB.students;
     if(filter.kelasCategory === "pilih" && filter.kelasSelected && filter.kelasSelected.length){
-      list = list.filter(s => filter.kelasSelected.includes(kelasTingkatan(s.kelas)));
+      list = list.filter(s => filter.kelasSelected.includes(s.kelas));
     }
     return list.map(s=>({
       "Nama": s.name, "NIK": s.nik, "Kode": s.code, "Kelas": s.kelas||"-",
@@ -4460,11 +4456,76 @@ function printLaporan(){
 /* =========================================================
    TEACHER: Data Siswa
    ========================================================= */
+/* Daftar kelas master (dipakai bersama oleh form Data Siswa & filter Laporan).
+   Digabung dengan nilai kelas siswa yang mungkin belum ada di daftar master,
+   supaya data lama tetap terlihat & tidak "hilang" saat dipilih. */
+function availableKelasList(){
+  const set = new Set(DB.classList || []);
+  DB.students.forEach(s=>{ if(s.kelas) set.add(s.kelas); });
+  return [...set].sort((a,b)=>a.localeCompare(b,"id",{numeric:true}));
+}
+
+/* Bangun <option> untuk dropdown pilih kelas. currentValue akan otomatis
+   disertakan meski belum ada di daftar master (mis. data lama). */
+function classOptionsHtml(currentValue){
+  const list = availableKelasList();
+  if(!list.length){
+    return `<option value="">Belum ada kelas — tambahkan dulu di menu Data Siswa</option>`;
+  }
+  const opts = [`<option value="">-- Pilih Kelas --</option>`]
+    .concat(list.map(k=>`<option value="${k}" ${k===currentValue?"selected":""}>${k}</option>`));
+  return opts.join("");
+}
+
+async function addClassOption(){
+  const input = document.getElementById("new-class-input");
+  const val = input.value.trim();
+  if(!val){ toast("Nama kelas tidak boleh kosong.", "error"); return; }
+  if(!DB.classList) DB.classList = [];
+  if(DB.classList.some(k=>k.toLowerCase()===val.toLowerCase())){
+    toast("Kelas tersebut sudah ada di daftar.", "error");
+    return;
+  }
+  DB.classList.push(val);
+  await saveDB();
+  toast("Kelas ditambahkan.");
+  renderTeacherStudents();
+}
+
+async function deleteClassOption(name){
+  const usedCount = DB.students.filter(s=>s.kelas===name).length;
+  const msg = usedCount>0
+    ? `Kelas "${name}" masih dipakai oleh ${usedCount} siswa. Kelas ini akan dihapus dari daftar pilihan (data siswa yang sudah memakainya tidak berubah). Lanjutkan?`
+    : `Hapus kelas "${name}" dari daftar pilihan?`;
+  if(!confirm(msg)) return;
+  DB.classList = (DB.classList||[]).filter(k=>k!==name);
+  await saveDB();
+  toast("Kelas dihapus dari daftar pilihan.");
+  renderTeacherStudents();
+}
+
 function renderTeacherStudents(){
   const el = document.getElementById("teacher-content");
   const prevScrollBox = document.getElementById("students-table-scroll");
   const prevScrollLeft = prevScrollBox ? prevScrollBox.scrollLeft : 0;
   el.innerHTML = `
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6 p-5">
+      <h4 class="font-display font-bold mb-1">Kelola Kelas</h4>
+      <p class="text-xs text-on-surface-variant mb-3">Daftar kelas di sini otomatis muncul sebagai pilihan pada form siswa &amp; filter menu Laporan.</p>
+      <div class="flex gap-2 mb-3">
+        <input id="new-class-input" type="text" placeholder="cth. X, XI TKJ 1, XII RPL 2" class="flex-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" onkeydown="if(event.key==='Enter'){event.preventDefault();addClassOption();}"/>
+        <button onclick="addClassOption()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold px-4 hover:shadow-md transition-all shrink-0">+ Tambah</button>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${(DB.classList||[]).length ? [...DB.classList].sort((a,b)=>a.localeCompare(b,"id",{numeric:true})).map(k=>`
+          <span class="flex items-center gap-1.5 pl-3 pr-1.5 py-1 rounded-full bg-surface-container text-xs font-medium border border-outline-variant">
+            ${k}
+            <button onclick="deleteClassOption('${k.replace(/'/g,"\\'")}')" title="Hapus kelas ${k}" class="w-5 h-5 rounded-full hover:bg-error-container hover:text-on-error-container flex items-center justify-center transition-colors">
+              <span class="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          </span>`).join("") : `<p class="text-xs text-on-surface-variant italic">Belum ada kelas. Tambahkan kelas terlebih dahulu.</p>`}
+      </div>
+    </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
       <div class="p-5 border-b border-outline-variant">
         <h4 class="font-display font-bold mb-3">Tambah Siswa Baru</h4>
@@ -4472,7 +4533,7 @@ function renderTeacherStudents(){
           <textarea id="new-student-name" rows="1" placeholder="Nama siswa" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
           <textarea id="new-student-nik" rows="1" placeholder="NIK (16 digit)" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
           <textarea id="new-student-code" rows="1" placeholder="Kode siswa" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
-          <textarea id="new-student-kelas" rows="1" placeholder="Kelas (cth. VIII-B)" class="autogrow-input px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+          <select id="new-student-kelas" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none bg-surface-container-lowest">${classOptionsHtml("")}</select>
           <input id="new-student-email" type="email" placeholder="Email orang tua (opsional)" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
           <button onclick="addStudent()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 hover:shadow-md transition-all">+ Tambah</button>
         </div>
@@ -4541,7 +4602,7 @@ function openEditStudentModal(id){
   document.getElementById("edit-student-name").value = s.name || "";
   document.getElementById("edit-student-nik").value = s.nik || "";
   document.getElementById("edit-student-code").value = s.code || "";
-  document.getElementById("edit-student-kelas").value = s.kelas || "";
+  document.getElementById("edit-student-kelas").innerHTML = classOptionsHtml(s.kelas || "");
   document.getElementById("edit-student-email").value = s.parentEmail || "";
   document.getElementById("edit-student-error").classList.add("hidden");
   const modal = document.getElementById("edit-student-modal");
@@ -4550,7 +4611,7 @@ function openEditStudentModal(id){
   // Panggil autoGrow SETELAH modal ditampilkan, supaya tinggi textarea
   // dihitung dari ukuran sebenarnya (bukan 0 saat masih tersembunyi).
   requestAnimationFrame(()=>{
-    ["edit-student-name","edit-student-nik","edit-student-code","edit-student-kelas"].forEach(fid=>{
+    ["edit-student-name","edit-student-nik","edit-student-code"].forEach(fid=>{
       const el = document.getElementById(fid);
       if(el) autoGrow(el);
     });

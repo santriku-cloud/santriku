@@ -4118,12 +4118,85 @@ const LAPORAN_TYPES = [
 ];
 
 // State pilihan form Laporan — day/month/year kosong ("") berarti "Semua".
-let laporanState = { type: "siswa", day: "", month: "", year: "", format: "excel" };
+let laporanState = { type: "siswa", dateCategory: "all", date: "", dateFrom: "", dateTo: "", kelasCategory: "all", kelasSelected: [], format: "excel" };
+
+/* Ambil "tingkatan" dari teks kelas bebas (mis. "VIII-B" -> "VIII", "X TKJ 1" -> "X") */
+function kelasTingkatan(kelasStr){
+  if(!kelasStr) return "";
+  const s = String(kelasStr).trim();
+  const m = s.split(/[\s-]+/)[0];
+  return m || s;
+}
+function availableTingkatanList(){
+  const set = new Set();
+  DB.students.forEach(s=>{ const t = kelasTingkatan(s.kelas); if(t) set.add(t); });
+  return [...set].sort();
+}
 
 function renderTeacherLaporan(){
   const el = document.getElementById("teacher-content");
   const ls = laporanState;
   const selectedType = LAPORAN_TYPES.find(l=>l.key===ls.type) || LAPORAN_TYPES[0];
+  const isSiswa = selectedType.key === "siswa";
+
+  const dateCategoryHtml = `
+    <div class="sm:col-span-2">
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Kategori</label>
+      <select onchange="setLaporanDateCategory(this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest">
+        <option value="all" ${ls.dateCategory==="all"?"selected":""}>Semua</option>
+        <option value="single" ${ls.dateCategory==="single"?"selected":""}>Pilih Waktu</option>
+        <option value="range" ${ls.dateCategory==="range"?"selected":""}>Rentang Waktu</option>
+      </select>
+    </div>
+    ${ls.dateCategory==="single" ? `
+    <div class="sm:col-span-2">
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Tanggal</label>
+      <input type="date" value="${ls.date||""}" onchange="setLaporanField('date', this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest"/>
+    </div>` : ""}
+    ${ls.dateCategory==="range" ? `
+    <div>
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Dari Tanggal</label>
+      <input type="date" value="${ls.dateFrom||""}" onchange="setLaporanField('dateFrom', this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest"/>
+    </div>
+    <div>
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Sampai Tanggal</label>
+      <input type="date" value="${ls.dateTo||""}" onchange="setLaporanField('dateTo', this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest"/>
+    </div>` : ""}
+  `;
+
+  const tingkatanList = availableTingkatanList();
+  const kelasCategoryHtml = `
+    <div class="sm:col-span-2">
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Kategori</label>
+      <select onchange="setLaporanKelasCategory(this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest">
+        <option value="all" ${ls.kelasCategory==="all"?"selected":""}>Semua</option>
+        <option value="pilih" ${ls.kelasCategory==="pilih"?"selected":""}>Pilih Tingkatan</option>
+      </select>
+    </div>
+    ${ls.kelasCategory==="pilih" ? `
+    <div class="sm:col-span-2">
+      <label class="text-xs font-medium text-on-surface-variant block mb-1">Tingkatan</label>
+      <div class="flex flex-wrap gap-2">
+        ${tingkatanList.length ? tingkatanList.map(t=>`
+          <label class="flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs cursor-pointer transition-colors ${ls.kelasSelected.includes(t)?"bg-primary text-on-primary border-primary":"border-outline-variant text-on-surface-variant"}">
+            <input type="checkbox" class="hidden" ${ls.kelasSelected.includes(t)?"checked":""} onchange="toggleLaporanKelas('${t}')"/>
+            ${t}
+          </label>`).join("") : `<p class="text-xs text-on-surface-variant italic">Belum ada data kelas.</p>`}
+      </div>
+    </div>` : ""}
+  `;
+
+  let helperText;
+  if(selectedType.dateFilterable){
+    if(ls.dateCategory==="all") helperText = "Semua data akan ditampilkan tanpa filter waktu.";
+    else if(ls.dateCategory==="single") helperText = "Hanya data pada tanggal yang dipilih yang akan ditampilkan.";
+    else helperText = "Data akan difilter sesuai rentang tanggal. Kosongkan salah satu untuk rentang terbuka.";
+  } else if(isSiswa){
+    helperText = ls.kelasCategory==="pilih" ? "Hanya siswa dari tingkatan yang dicentang yang akan ditampilkan." : "Semua siswa dari semua tingkatan akan ditampilkan.";
+  } else {
+    helperText = "Data ini tidak memiliki filter tambahan, seluruh data akan ditampilkan.";
+  }
+
   el.innerHTML = `
     <div class="mb-6">
       <h3 class="font-display text-2xl font-bold">Laporan</h3>
@@ -4137,28 +4210,10 @@ function renderTeacherLaporan(){
             ${LAPORAN_TYPES.map(lt=>`<option value="${lt.key}" ${lt.key===ls.type?"selected":""}>${lt.label}</option>`).join("")}
           </select>
         </div>
-        <div>
-          <label class="text-xs font-medium text-on-surface-variant block mb-1">Tanggal</label>
-          <select onchange="setLaporanField('day', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
-            <option value="" ${ls.day===""?"selected":""}>Semua</option>
-            ${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${String(d)===ls.day?"selected":""}>${d}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label class="text-xs font-medium text-on-surface-variant block mb-1">Bulan</label>
-          <select onchange="setLaporanField('month', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
-            <option value="" ${ls.month===""?"selected":""}>Semua</option>
-            ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${String(i)===ls.month?"selected":""}>${m}</option>`).join("")}
-          </select>
-        </div>
-        <div>
-          <label class="text-xs font-medium text-on-surface-variant block mb-1">Tahun</label>
-          <select onchange="setLaporanField('year', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
-            <option value="" ${ls.year===""?"selected":""}>Semua</option>
-            ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${String(y)===ls.year?"selected":""}>${y}</option>`).join("")}
-          </select>
-        </div>
-        <div>
+
+        ${selectedType.dateFilterable ? dateCategoryHtml : (isSiswa ? kelasCategoryHtml : `<div class="sm:col-span-2"><p class="text-xs italic text-on-surface-variant py-2">Data ini tidak memiliki filter tambahan.</p></div>`)}
+
+        <div class="sm:col-span-2">
           <label class="text-xs font-medium text-on-surface-variant block mb-1">Format</label>
           <div class="flex gap-1">
             <button onclick="setLaporanField('format','excel')" class="flex-1 text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors ${ls.format==='excel'?'bg-primary text-on-primary':'bg-surface text-on-surface-variant border border-outline-variant'}">Excel</button>
@@ -4166,7 +4221,7 @@ function renderTeacherLaporan(){
           </div>
         </div>
       </div>
-      <p class="text-[11px] text-on-surface-variant mb-4">${selectedType.dateFilterable ? "Kosongkan (biarkan \"Semua\") kolom yang tidak ingin difilter — bisa isi salah satu saja, misalnya tahun saja." : "Data ini tidak memiliki filter tanggal, seluruh data akan ditampilkan."}</p>
+      <p class="text-[11px] text-on-surface-variant mb-4">${helperText}</p>
       <div class="flex gap-3">
         <button onclick="downloadLaporan()" class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5">
           <span class="material-symbols-outlined text-[18px]">download</span> Unduh
@@ -4184,20 +4239,48 @@ function setLaporanField(field, value){
   renderTeacherLaporan();
 }
 
-function currentLaporanFilter(){
-  return { day: laporanState.day, month: laporanState.month, year: laporanState.year };
+function setLaporanDateCategory(value){
+  laporanState.dateCategory = value;
+  if(value==="single" && !laporanState.date) laporanState.date = todayISO();
+  renderTeacherLaporan();
 }
 
-/* Cocokkan sebuah tanggal (ISO / datetime) dengan filter hari/bulan/tahun.
-   Kolom yang dikosongkan ("Semua") tidak ikut membatasi. */
+function setLaporanKelasCategory(value){
+  laporanState.kelasCategory = value;
+  renderTeacherLaporan();
+}
+
+function toggleLaporanKelas(tingkat){
+  const idx = laporanState.kelasSelected.indexOf(tingkat);
+  if(idx>=0) laporanState.kelasSelected.splice(idx,1);
+  else laporanState.kelasSelected.push(tingkat);
+  renderTeacherLaporan();
+}
+
+function currentLaporanFilter(){
+  return {
+    category: laporanState.dateCategory, date: laporanState.date,
+    dateFrom: laporanState.dateFrom, dateTo: laporanState.dateTo,
+    kelasCategory: laporanState.kelasCategory, kelasSelected: laporanState.kelasSelected,
+  };
+}
+
+/* Cocokkan sebuah tanggal (ISO date/datetime) dengan filter kategori (all/single/range).
+   Perbandingan dilakukan sebagai teks "YYYY-MM-DD" agar tidak terpengaruh zona waktu. */
 function matchesDateFilter(dateStr, filter){
-  if(!filter || (!filter.day && filter.month === "" && !filter.year)) return true;
+  if(!filter || !filter.category || filter.category === "all") return true;
   if(!dateStr) return false;
-  const d = new Date(dateStr);
-  if(isNaN(d.getTime())) return false;
-  if(filter.day && d.getDate() !== parseInt(filter.day,10)) return false;
-  if(filter.month !== "" && filter.month != null && parseInt(filter.month,10) !== d.getMonth()) return false;
-  if(filter.year && d.getFullYear() !== parseInt(filter.year,10)) return false;
+  const dOnly = String(dateStr).slice(0,10);
+  if(filter.category === "single"){
+    if(!filter.date) return true;
+    return dOnly === filter.date;
+  }
+  if(filter.category === "range"){
+    if(!filter.dateFrom && !filter.dateTo) return true;
+    if(filter.dateFrom && dOnly < filter.dateFrom) return false;
+    if(filter.dateTo && dOnly > filter.dateTo) return false;
+    return true;
+  }
   return true;
 }
 
@@ -4205,7 +4288,11 @@ function matchesDateFilter(dateStr, filter){
 function laporanRows(key, filter){
   filter = filter || { day:"", month:"", year:"" };
   if(key === "siswa"){
-    return DB.students.map(s=>({
+    let list = DB.students;
+    if(filter.kelasCategory === "pilih" && filter.kelasSelected && filter.kelasSelected.length){
+      list = list.filter(s => filter.kelasSelected.includes(kelasTingkatan(s.kelas)));
+    }
+    return list.map(s=>({
       "Nama": s.name, "NIK": s.nik, "Kode": s.code, "Kelas": s.kelas||"-",
       "Email Orang Tua": s.parentEmail||"-", "Total Poin Pelanggaran": totalPoints(s.id),
     }));
@@ -4225,18 +4312,36 @@ function laporanRows(key, filter){
   if(key === "pembayaran"){
     const rows = [];
     const yearsInData = [...new Set(DB.payments.map(p=>parseInt(p.month.split("-")[0],10)))];
-    const years = filter.year ? [parseInt(filter.year,10)] : (yearsInData.length ? yearsInData : [CURRENT_YEAR]);
-    const months = filter.month !== "" ? [parseInt(filter.month,10)] : Array.from({length:12},(_,i)=>i);
+    const baseYears = yearsInData.length ? yearsInData : [CURRENT_YEAR];
+    let monthKeysToUse;
+    if(filter.category === "single" && filter.date){
+      monthKeysToUse = [filter.date.slice(0,7)];
+    } else if(filter.category === "range" && (filter.dateFrom || filter.dateTo)){
+      const fromYM = filter.dateFrom ? filter.dateFrom.slice(0,7) : null;
+      const toYM = filter.dateTo ? filter.dateTo.slice(0,7) : null;
+      const minY = Math.min(...baseYears), maxY = Math.max(...baseYears);
+      monthKeysToUse = [];
+      for(let y=minY; y<=maxY; y++){
+        for(let mi=0; mi<12; mi++){
+          const mk = monthKey(y, mi);
+          if(fromYM && mk < fromYM) continue;
+          if(toYM && mk > toYM) continue;
+          monthKeysToUse.push(mk);
+        }
+      }
+    } else {
+      monthKeysToUse = [];
+      baseYears.forEach(y=>{ for(let mi=0; mi<12; mi++) monthKeysToUse.push(monthKey(y, mi)); });
+    }
     DB.students.forEach(s=>{
-      years.forEach(y=>{
-        months.forEach(mi=>{
-          const mKey = monthKey(y, mi);
-          const st = paymentStatus(s.id, mKey);
-          rows.push({
-            "Nama Siswa": s.name, "Kelas": s.kelas||"-", "Bulan": `${MONTHS_ID[mi]} ${y}`,
-            "Status": st==="paid" ? "Lunas" : "Belum Lunas",
-            "Nominal Dibayar": st==="paid" ? formatRupiah(paymentAmountPaid(s.id, mKey)) : "-",
-          });
+      monthKeysToUse.forEach(mKey=>{
+        const [y, mNum] = mKey.split("-").map(Number);
+        const mi = mNum - 1;
+        const st = paymentStatus(s.id, mKey);
+        rows.push({
+          "Nama Siswa": s.name, "Kelas": s.kelas||"-", "Bulan": `${MONTHS_ID[mi]} ${y}`,
+          "Status": st==="paid" ? "Lunas" : "Belum Lunas",
+          "Nominal Dibayar": st==="paid" ? formatRupiah(paymentAmountPaid(s.id, mKey)) : "-",
         });
       });
     });

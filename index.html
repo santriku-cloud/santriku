@@ -2891,6 +2891,14 @@ let paymentsRevenueFilter = {
   fromYear: CURRENT_YEAR, fromMonthIndex: 0,
   toYear: CURRENT_YEAR, toMonthIndex: 11,
 };
+// mode: 'all' | 'month' | 'range' — filter periode untuk kotak & tabel Uang Keluar
+let expensesFilter = {
+  mode: "all",
+  year: CURRENT_YEAR, monthIndex: new Date().getMonth(),
+  fromYear: CURRENT_YEAR, fromMonthIndex: 0,
+  toYear: CURRENT_YEAR, toMonthIndex: 11,
+};
+let expenseInputMode = "item"; // 'item' (per barang) | 'total' (langsung keseluruhan)
 
 const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 
@@ -2918,10 +2926,11 @@ function seedData(){
     { id: uid("vr"), studentId: students[1].id, typeId: violationTypes[2].id, date: todayISO(-10), teacher: "Ms. Davis", note: "" },
   ];
   const payments = [];
+  const expenses = [];
   const visits = [];
   const izinRequests = [];
   const settings = { parentToken: genToken() };
-  return { students, violationTypes, violationRecords, payments, visits, izinRequests, settings };
+  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, settings };
 }
 
 function genToken(){
@@ -2952,6 +2961,7 @@ async function loadDB(){
       DB = JSON.parse(snap.val().json);
       // backward-compat: pastikan field baru selalu ada meski data lama belum punya
       if (!DB.visits) DB.visits = [];
+      if (!DB.expenses) DB.expenses = [];
       if (!DB.izinRequests) DB.izinRequests = [];
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
@@ -3161,6 +3171,52 @@ function formatRupiah(n){
   // Nominal yang diketik guru (mis. 250) dianggap dalam satuan ribu Rupiah,
   // supaya cukup ketik "250" untuk Rp250.000, tidak perlu ketik nol-nol.
   return "Rp" + (((n||0) * 1000)).toLocaleString("id-ID");
+}
+
+/* =========================================================
+   TEACHER: Uang Keluar (Pengeluaran) & Saldo Sekolah
+   Nominal disimpan dalam satuan ribu Rupiah (sama seperti
+   konvensi Pembayaran) supaya bisa dijumlah langsung dengan
+   Uang Masuk untuk menghitung saldo.
+   ========================================================= */
+
+/* Total seluruh uang masuk (semua bulan yang sudah Lunas, sepanjang waktu). */
+function totalRevenueAllTime(){
+  let total = 0;
+  DB.payments.forEach(p=>{
+    if(p.status === "paid") total += paymentAmountPaid(p.studentId, p.month);
+  });
+  return total;
+}
+
+/* Total seluruh pengeluaran, sepanjang waktu. */
+function totalExpensesAllTime(){
+  return DB.expenses.reduce((sum,e)=> sum + (e.amount||0), 0);
+}
+
+/* Saldo uang sekolah saat ini = seluruh uang masuk − seluruh uang keluar. */
+function currentSchoolBalance(){
+  return totalRevenueAllTime() - totalExpensesAllTime();
+}
+
+/* Daftar pengeluaran sesuai filter periode (all / bulan tertentu / rentang bulan-tahun). */
+function expensesInFilter(){
+  const f = expensesFilter;
+  const list = [...DB.expenses].sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
+  if(f.mode === "month"){
+    const mk = monthKey(f.year, f.monthIndex);
+    return list.filter(e => e.date && e.date.slice(0,7) === mk);
+  }
+  if(f.mode === "range"){
+    const fromKey = monthKey(f.fromYear, f.fromMonthIndex);
+    const toKey = monthKey(f.toYear, f.toMonthIndex);
+    return list.filter(e => e.date && e.date.slice(0,7) >= fromKey && e.date.slice(0,7) <= toKey);
+  }
+  return list; // 'all'
+}
+
+function totalExpensesForFilter(){
+  return expensesInFilter().reduce((sum,e)=> sum + (e.amount||0), 0);
 }
 
 /* =========================================================
@@ -3507,6 +3563,7 @@ document.addEventListener("click", function(e){
     ["dashboard-violation-card","dashboard-violation-picker"],
     ["payments-year-card","payments-year-picker"],
     ["payments-revenue-card","payments-revenue-picker"],
+    ["expenses-filter-card","expenses-filter-picker"],
   ].forEach(([cardId,pickerId])=>{
     const card = document.getElementById(cardId);
     const picker = document.getElementById(pickerId);
@@ -4512,6 +4569,234 @@ async function savePaymentAmount(){
 }
 
 /* =========================================================
+   TEACHER: Uang Keluar
+   ========================================================= */
+const EXPENSES_FILTER_LABEL = { all: "Semua", month: "Bulan Ini", range: "Rentang" };
+
+function renderTeacherExpenses(){
+  const el = document.getElementById("teacher-content");
+  const ef = expensesFilter;
+  const filteredExpenses = expensesInFilter();
+  const filteredTotal = totalExpensesForFilter();
+  const balance = currentSchoolBalance();
+
+  el.innerHTML = `
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
+      <div class="p-5 flex flex-wrap gap-4">
+        <div class="relative" id="expenses-filter-card">
+          <button onclick="toggleExpensesFilterPicker(event)" class="flex items-center gap-2 bg-error-container text-on-error-container rounded-xl px-4 py-2.5 hover:shadow-md transition-all">
+            <span class="material-symbols-outlined text-[20px]">trending_down</span>
+            <span class="text-left">
+              <span class="block text-[10px] uppercase font-semibold opacity-80">Uang Keluar (${EXPENSES_FILTER_LABEL[ef.mode]})</span>
+              <span class="block text-sm font-bold">${formatRupiah(filteredTotal)}</span>
+            </span>
+            <span class="material-symbols-outlined text-[18px]">expand_more</span>
+          </button>
+          <div id="expenses-filter-picker" class="hidden absolute left-0 top-full mt-2 z-20 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-3 w-72">
+            <div class="flex gap-1 mb-3">
+              <button onclick="selectExpensesFilterMode('all')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${ef.mode==='all'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Semua</button>
+              <button onclick="selectExpensesFilterMode('month')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${ef.mode==='month'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Pilih Bulan</button>
+              <button onclick="selectExpensesFilterMode('range')" class="flex-1 text-xs font-semibold px-2 py-1.5 rounded-md transition-colors ${ef.mode==='range'?'bg-primary text-on-primary':'text-on-surface-variant hover:bg-surface-container'}">Rentang</button>
+            </div>
+            ${ef.mode === "month" ? `
+              <div class="grid grid-cols-2 gap-2 mb-1">
+                <select onchange="setExpensesFilterField('year', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===ef.year?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setExpensesFilterField('monthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===ef.monthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+            ` : ""}
+            ${ef.mode === "range" ? `
+              <p class="text-[11px] text-on-surface-variant mb-1">Dari</p>
+              <div class="grid grid-cols-2 gap-2 mb-2">
+                <select onchange="setExpensesFilterField('fromYear', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===ef.fromYear?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setExpensesFilterField('fromMonthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===ef.fromMonthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+              <p class="text-[11px] text-on-surface-variant mb-1">Sampai</p>
+              <div class="grid grid-cols-2 gap-2">
+                <select onchange="setExpensesFilterField('toYear', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${y===ef.toYear?"selected":""}>${y}</option>`).join("")}
+                </select>
+                <select onchange="setExpensesFilterField('toMonthIndex', this.value)" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs">
+                  ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${i===ef.toMonthIndex?"selected":""}>${m}</option>`).join("")}
+                </select>
+              </div>
+            ` : ""}
+          </div>
+          <p class="text-[11px] text-on-surface-variant mt-1.5">Klik untuk pilih semua, bulan tertentu, atau rentang bulan &amp; tahun.</p>
+        </div>
+
+        <div class="flex items-center gap-2 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl px-4 py-2.5">
+          <span class="material-symbols-outlined text-[20px]">account_balance</span>
+          <span class="text-left">
+            <span class="block text-[10px] uppercase font-semibold opacity-80">Saldo Sekolah Saat Ini</span>
+            <span class="block text-sm font-bold">${formatRupiah(balance)}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
+      <div class="p-5 border-b border-outline-variant">
+        <h4 class="font-display font-bold mb-3">Catat Pengeluaran</h4>
+        <div class="flex gap-1 mb-4 max-w-sm">
+          <button onclick="setExpenseInputMode('item')" class="flex-1 text-xs font-semibold px-3 py-2 rounded-md transition-colors ${expenseInputMode==='item'?'bg-primary text-on-primary':'bg-surface text-on-surface-variant border border-outline-variant'}">Input per Item</button>
+          <button onclick="setExpenseInputMode('total')" class="flex-1 text-xs font-semibold px-3 py-2 rounded-md transition-colors ${expenseInputMode==='total'?'bg-primary text-on-primary':'bg-surface text-on-surface-variant border border-outline-variant'}">Langsung Keseluruhan</button>
+        </div>
+
+        ${expenseInputMode === "item" ? `
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label class="text-xs font-medium text-on-surface-variant block mb-1">Nama Barang</label>
+              <input id="expense-item-name" type="text" placeholder="cth. Spidol Whiteboard" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-on-surface-variant block mb-1">Jumlah <span class="normal-case font-normal text-[10px]">(opsional)</span></label>
+              <input id="expense-item-qty" type="number" min="0" placeholder="cth. 5" oninput="updateExpenseItemTotalPreview()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-on-surface-variant block mb-1">Harga <span class="normal-case font-normal text-[10px]">(ribuan, cth. 15 = Rp15.000, opsional)</span></label>
+              <input id="expense-item-price" type="number" min="0" placeholder="cth. 15" oninput="updateExpenseItemTotalPreview()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+            </div>
+          </div>
+          <p class="text-xs text-on-surface-variant mt-2">Total: <span id="expense-item-total-preview" class="font-semibold text-on-surface">Rp0</span> • Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>
+          <button onclick="saveExpenseItem()" class="mt-3 bg-primary text-on-primary font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90">Simpan Pengeluaran</button>
+        ` : `
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs font-medium text-on-surface-variant block mb-1">Keterangan <span class="normal-case font-normal text-[10px]">(opsional)</span></label>
+              <input id="expense-total-desc" type="text" placeholder="cth. Kebutuhan operasional bulan ini" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-on-surface-variant block mb-1">Jumlah Pengeluaran <span class="normal-case font-normal text-[10px]">(ribuan, cth. 500 = Rp500.000)</span></label>
+              <input id="expense-total-amount" type="number" min="0" placeholder="cth. 500" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+            </div>
+          </div>
+          <p class="text-xs text-on-surface-variant mt-2">Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>
+          <button onclick="saveExpenseTotal()" class="mt-3 bg-primary text-on-primary font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90">Simpan Pengeluaran</button>
+        `}
+      </div>
+
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left text-sm min-w-[700px]">
+          <thead>
+            <tr class="bg-surface text-on-surface-variant text-xs uppercase">
+              <th class="p-3">Tanggal</th>
+              <th class="p-3">Keterangan / Barang</th>
+              <th class="p-3 text-center">Jumlah</th>
+              <th class="p-3 text-right">Harga Satuan</th>
+              <th class="p-3 text-right">Total</th>
+              <th class="p-3 text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredExpenses.map(e=>`
+              <tr class="border-t border-outline-variant">
+                <td class="p-3 whitespace-nowrap">${formatDate(e.date)}${e.time?` • ${e.time}`:""}</td>
+                <td class="p-3">${escapeHtml(e.itemName || (e.type==="total" ? "Pengeluaran" : "-"))}</td>
+                <td class="p-3 text-center">${e.qty != null ? e.qty : "-"}</td>
+                <td class="p-3 text-right">${e.price != null ? formatRupiah(e.price) : "-"}</td>
+                <td class="p-3 text-right font-semibold">${formatRupiah(e.amount)}</td>
+                <td class="p-3 text-center">
+                  <button onclick="deleteExpense('${e.id}')" class="text-error hover:opacity-70" title="Hapus">
+                    <span class="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </td>
+              </tr>`).join("")}
+            ${filteredExpenses.length===0?`<tr><td colspan="6" class="p-6 text-center text-on-surface-variant">Belum ada pengeluaran pada periode ini.</td></tr>`:""}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function toggleExpensesFilterPicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("expenses-filter-picker");
+  if(picker) picker.classList.toggle("hidden");
+}
+function selectExpensesFilterMode(mode){
+  expensesFilter.mode = mode;
+  renderTeacherExpenses();
+  const picker = document.getElementById("expenses-filter-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+function setExpensesFilterField(field, value){
+  expensesFilter[field] = parseInt(value,10);
+  renderTeacherExpenses();
+  const picker = document.getElementById("expenses-filter-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+
+function setExpenseInputMode(mode){
+  expenseInputMode = mode;
+  renderTeacherExpenses();
+}
+
+function updateExpenseItemTotalPreview(){
+  const qtyEl = document.getElementById("expense-item-qty");
+  const priceEl = document.getElementById("expense-item-price");
+  const previewEl = document.getElementById("expense-item-total-preview");
+  if(!qtyEl || !priceEl || !previewEl) return;
+  const qty = parseFloat(qtyEl.value);
+  const price = parseFloat(priceEl.value);
+  const effQty = !isNaN(qty) && qty > 0 ? qty : 1;
+  const effPrice = !isNaN(price) && price > 0 ? price : 0;
+  previewEl.textContent = formatRupiah(effQty * effPrice);
+}
+
+async function saveExpenseItem(){
+  const nameEl = document.getElementById("expense-item-name");
+  const qtyEl = document.getElementById("expense-item-qty");
+  const priceEl = document.getElementById("expense-item-price");
+  const name = nameEl.value.trim();
+  const qtyRaw = qtyEl.value;
+  const priceRaw = priceEl.value;
+  if(!name){ toast("Nama barang wajib diisi.", "error"); nameEl.focus(); return; }
+  const qty = qtyRaw !== "" ? Math.max(0, parseFloat(qtyRaw)) : null;
+  const price = priceRaw !== "" ? Math.max(0, parseFloat(priceRaw)) : null;
+  if(qty == null && price == null){ toast("Isi jumlah atau harga.", "error"); return; }
+  const amount = (qty != null ? qty : 1) * (price != null ? price : 0);
+  if(amount <= 0){ toast("Nominal pengeluaran tidak valid.", "error"); return; }
+  DB.expenses.push({
+    id: uid("exp"), type: "item", itemName: name, qty, price, amount,
+    date: todayISO(), time: nowHHMM(), createdAt: new Date().toISOString(),
+  });
+  await saveDB();
+  toast("Pengeluaran tersimpan.");
+  renderTeacherExpenses();
+}
+
+async function saveExpenseTotal(){
+  const descEl = document.getElementById("expense-total-desc");
+  const amountEl = document.getElementById("expense-total-amount");
+  const desc = descEl.value.trim();
+  const amount = Math.max(0, parseFloat(amountEl.value) || 0);
+  if(amount <= 0){ toast("Isi jumlah pengeluaran.", "error"); amountEl.focus(); return; }
+  DB.expenses.push({
+    id: uid("exp"), type: "total", itemName: desc, qty: null, price: null, amount,
+    date: todayISO(), time: nowHHMM(), createdAt: new Date().toISOString(),
+  });
+  await saveDB();
+  toast("Pengeluaran tersimpan.");
+  renderTeacherExpenses();
+}
+
+async function deleteExpense(id){
+  DB.expenses = DB.expenses.filter(e=>e.id!==id);
+  await saveDB();
+  toast("Pengeluaran dihapus.");
+  renderTeacherExpenses();
+}
+
+/* =========================================================
    TEACHER: Jenis Pelanggaran
    ========================================================= */
 function renderTeacherViolationTypes(){
@@ -5244,6 +5529,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
   { id: "students", icon: "group", label: "Data Siswa" },
   { id: "payments", icon: "payments", label: "Pembayaran" },
+  { id: "expenses", icon: "trending_down", label: "Uang Keluar" },
   { id: "violation-types", icon: "rule", label: "Jenis Pelanggaran" },
   { id: "log-violation", icon: "report_problem", label: "Catat Pelanggaran" },
   { id: "visits", icon: "calendar_month", label: "Jadwal Kunjungan" },
@@ -5258,6 +5544,7 @@ const TEACHER_RENDERERS = {
   dashboard: () => renderTeacherDashboard(),
   students: () => renderTeacherStudents(),
   payments: () => renderTeacherPayments(),
+  expenses: () => renderTeacherExpenses(),
   "violation-types": () => renderTeacherViolationTypes(),
   "log-violation": () => renderTeacherLogViolation(),
   visits: () => renderTeacherVisits(),
@@ -5317,7 +5604,7 @@ function teacherGo(page){
   currentTeacherPage = page;
   setActiveNav(page);
   closeTeacherMobileNav();
-  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
+  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
   document.getElementById("teacher-page-title").textContent = titles[page];
   TEACHER_RENDERERS[page]();
 }

@@ -4962,7 +4962,7 @@ function renderTeacherExpenses(){
               <textarea id="expense-item-price" rows="1" inputmode="decimal" placeholder="cth. 15" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this); updateExpenseItemTotalPreview()"></textarea>
             </div>
           </div>
-          <p class="text-xs text-on-surface-variant mt-2">Total: <span id="expense-item-total-preview" class="font-semibold text-on-surface">Rp0</span> • Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>
+          <p class="text-xs text-on-surface-variant mt-2">Total: <span id="expense-item-total-preview" class="font-semibold text-on-surface">Rp0</span></p>
           <button onclick="saveExpenseItem()" class="mt-3 bg-primary text-on-primary font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90">Simpan Pengeluaran</button>
         ` : `
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -4975,7 +4975,6 @@ function renderTeacherExpenses(){
               <textarea id="expense-total-amount" rows="1" inputmode="decimal" placeholder="cth. 500" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
             </div>
           </div>
-          <p class="text-xs text-on-surface-variant mt-2">Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>
           <button onclick="saveExpenseTotal()" class="mt-3 bg-primary text-on-primary font-semibold text-sm px-4 py-2 rounded-lg hover:opacity-90">Simpan Pengeluaran</button>
         `}
       </div>

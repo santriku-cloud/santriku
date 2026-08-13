@@ -3598,10 +3598,14 @@ function renderTeacherDashboard(){
       </div>
     </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
-      <div class="p-5 border-b border-outline-variant">
-        <h4 class="font-display font-bold">Grafik Sekolah</h4>
-      </div>
       <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="border border-outline-variant rounded-xl p-4 md:col-span-2">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Pelanggaran Santri</p>
+            ${trendBadge(violSeries.data, "down")}
+          </div>
+          <div class="h-40 md:h-56"><canvas id="chart-violation"></canvas></div>
+        </div>
         <div class="border border-outline-variant rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
             <p class="text-sm font-semibold">Pembayaran</p>
@@ -3624,13 +3628,6 @@ function renderTeacherDashboard(){
           <div class="h-40"><canvas id="chart-cash"></canvas></div>
         </div>
         <div class="border border-outline-variant rounded-xl p-4">
-          <div class="flex items-center justify-between mb-2">
-            <p class="text-sm font-semibold">Pelanggaran Santri</p>
-            ${trendBadge(violSeries.data, "down")}
-          </div>
-          <div class="h-40"><canvas id="chart-violation"></canvas></div>
-        </div>
-        <div class="border border-outline-variant rounded-xl p-4 md:col-span-2">
           <div class="flex items-center justify-between mb-2">
             <p class="text-sm font-semibold">Izin & Jenguk</p>
             ${trendBadge(izinSeries.data, null)}

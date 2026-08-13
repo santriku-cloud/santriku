@@ -3145,7 +3145,16 @@ async function setPaymentAmountPaid(studentId, mKey, amount){
   await saveDB();
 }
 
-/* Total uang yang benar-benar masuk (hanya dihitung dari bulan yang sudah ditandai Lunas). */
+/* Total infaq yang masuk pada bulan-bulan tertentu (berdasarkan tanggal infaq dicatat). */
+function infaqAmountForMonths(monthKeys){
+  const keySet = new Set(monthKeys);
+  return (DB.infaq||[]).reduce((sum,r)=>{
+    const mk = r.date ? r.date.slice(0,7) : null;
+    return keySet.has(mk) ? sum + (Number(r.amount)||0) : sum;
+  }, 0);
+}
+
+/* Total uang yang benar-benar masuk (bulanan santri yang Lunas + infaq santri). */
 function totalRevenueForMonths(monthKeys){
   let total = 0;
   DB.students.forEach(s=>{
@@ -3155,6 +3164,7 @@ function totalRevenueForMonths(monthKeys){
       }
     });
   });
+  total += infaqAmountForMonths(monthKeys);
   return total;
 }
 
@@ -3195,12 +3205,13 @@ function formatRupiah(n){
    Uang Masuk untuk menghitung saldo.
    ========================================================= */
 
-/* Total seluruh uang masuk (semua bulan yang sudah Lunas, sepanjang waktu). */
+/* Total seluruh uang masuk (semua bulan yang sudah Lunas + infaq, sepanjang waktu). */
 function totalRevenueAllTime(){
   let total = 0;
   DB.payments.forEach(p=>{
     if(p.status === "paid") total += paymentAmountPaid(p.studentId, p.month);
   });
+  total += infaqTotalAmount();
   return total;
 }
 

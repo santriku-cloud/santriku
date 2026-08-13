@@ -4106,41 +4106,104 @@ async function regenerateParentToken(){
 }
 
 /* =========================================================
-   TEACHER: Laporan (Export Excel & PDF)
+   TEACHER: Laporan (Export Excel & PDF, serta Print)
    ========================================================= */
 const LAPORAN_TYPES = [
-  { key: "siswa", label: "Data Siswa", icon: "group" },
-  { key: "pelanggaran", label: "Riwayat Pelanggaran", icon: "report_problem" },
-  { key: "pembayaran", label: "Status Pembayaran", icon: "payments" },
-  { key: "izin", label: "Izin & Kunjungan", icon: "assignment_turned_in" },
+  { key: "siswa", label: "Data Siswa", icon: "group", dateFilterable: false },
+  { key: "pelanggaran", label: "Riwayat Pelanggaran", icon: "report_problem", dateFilterable: true },
+  { key: "pembayaran", label: "Status Pembayaran", icon: "payments", dateFilterable: true },
+  { key: "pengeluaran", label: "Status Pengeluaran", icon: "trending_down", dateFilterable: true },
+  { key: "izin", label: "Izin", icon: "assignment_turned_in", dateFilterable: true },
+  { key: "kunjungan", label: "Kunjungan Orang Tua", icon: "calendar_month", dateFilterable: true },
 ];
+
+// State pilihan form Laporan — day/month/year kosong ("") berarti "Semua".
+let laporanState = { type: "siswa", day: "", month: "", year: "", format: "excel" };
 
 function renderTeacherLaporan(){
   const el = document.getElementById("teacher-content");
+  const ls = laporanState;
+  const selectedType = LAPORAN_TYPES.find(l=>l.key===ls.type) || LAPORAN_TYPES[0];
   el.innerHTML = `
     <div class="mb-6">
       <h3 class="font-display text-2xl font-bold">Laporan</h3>
-      <p class="text-on-surface-variant">Unduh data sekolah dalam format Excel (.xlsx) atau PDF.</p>
+      <p class="text-on-surface-variant">Pilih data, periode, dan format, lalu unduh atau cetak langsung.</p>
     </div>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-      ${LAPORAN_TYPES.map(lt=>`
-        <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-11 h-11 rounded-full bg-primary-fixed flex items-center justify-center text-primary shrink-0"><span class="material-symbols-outlined filled">${lt.icon}</span></div>
-            <h4 class="font-display font-bold">${lt.label}</h4>
-          </div>
-          <div class="flex gap-3">
-            <button onclick="exportLaporanExcel('${lt.key}')" class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all">⬇️ Excel</button>
-            <button onclick="exportLaporanPDF('${lt.key}')" class="flex-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all">⬇️ PDF</button>
+    <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant max-w-2xl">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-1">
+        <div class="sm:col-span-2">
+          <label class="text-xs font-medium text-on-surface-variant block mb-1">Jenis Data</label>
+          <select onchange="setLaporanField('type', this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest">
+            ${LAPORAN_TYPES.map(lt=>`<option value="${lt.key}" ${lt.key===ls.type?"selected":""}>${lt.label}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-on-surface-variant block mb-1">Tanggal</label>
+          <select onchange="setLaporanField('day', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
+            <option value="" ${ls.day===""?"selected":""}>Semua</option>
+            ${Array.from({length:31},(_,i)=>i+1).map(d=>`<option value="${d}" ${String(d)===ls.day?"selected":""}>${d}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-on-surface-variant block mb-1">Bulan</label>
+          <select onchange="setLaporanField('month', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
+            <option value="" ${ls.month===""?"selected":""}>Semua</option>
+            ${MONTHS_ID.map((m,i)=>`<option value="${i}" ${String(i)===ls.month?"selected":""}>${m}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-on-surface-variant block mb-1">Tahun</label>
+          <select onchange="setLaporanField('year', this.value)" ${selectedType.dateFilterable?"":"disabled"} class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest disabled:opacity-50 disabled:bg-surface">
+            <option value="" ${ls.year===""?"selected":""}>Semua</option>
+            ${YEAR_OPTIONS.map(y=>`<option value="${y}" ${String(y)===ls.year?"selected":""}>${y}</option>`).join("")}
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-medium text-on-surface-variant block mb-1">Format</label>
+          <div class="flex gap-1">
+            <button onclick="setLaporanField('format','excel')" class="flex-1 text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors ${ls.format==='excel'?'bg-primary text-on-primary':'bg-surface text-on-surface-variant border border-outline-variant'}">Excel</button>
+            <button onclick="setLaporanField('format','pdf')" class="flex-1 text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors ${ls.format==='pdf'?'bg-primary text-on-primary':'bg-surface text-on-surface-variant border border-outline-variant'}">PDF</button>
           </div>
         </div>
-      `).join("")}
+      </div>
+      <p class="text-[11px] text-on-surface-variant mb-4">${selectedType.dateFilterable ? "Kosongkan (biarkan \"Semua\") kolom yang tidak ingin difilter — bisa isi salah satu saja, misalnya tahun saja." : "Data ini tidak memiliki filter tanggal, seluruh data akan ditampilkan."}</p>
+      <div class="flex gap-3">
+        <button onclick="downloadLaporan()" class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined text-[18px]">download</span> Unduh
+        </button>
+        <button onclick="printLaporan()" class="flex-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined text-[18px]">print</span> Print
+        </button>
+      </div>
     </div>
   `;
 }
 
-/* Menyusun data laporan dalam bentuk array-of-object (dipakai untuk Excel & PDF) */
-function laporanRows(key){
+function setLaporanField(field, value){
+  laporanState[field] = value;
+  renderTeacherLaporan();
+}
+
+function currentLaporanFilter(){
+  return { day: laporanState.day, month: laporanState.month, year: laporanState.year };
+}
+
+/* Cocokkan sebuah tanggal (ISO / datetime) dengan filter hari/bulan/tahun.
+   Kolom yang dikosongkan ("Semua") tidak ikut membatasi. */
+function matchesDateFilter(dateStr, filter){
+  if(!filter || (!filter.day && filter.month === "" && !filter.year)) return true;
+  if(!dateStr) return false;
+  const d = new Date(dateStr);
+  if(isNaN(d.getTime())) return false;
+  if(filter.day && d.getDate() !== parseInt(filter.day,10)) return false;
+  if(filter.month !== "" && filter.month != null && parseInt(filter.month,10) !== d.getMonth()) return false;
+  if(filter.year && d.getFullYear() !== parseInt(filter.year,10)) return false;
+  return true;
+}
+
+/* Menyusun data laporan dalam bentuk array-of-object (dipakai untuk Excel, PDF & Print) */
+function laporanRows(key, filter){
+  filter = filter || { day:"", month:"", year:"" };
   if(key === "siswa"){
     return DB.students.map(s=>({
       "Nama": s.name, "NIK": s.nik, "Kode": s.code, "Kelas": s.kelas||"-",
@@ -4148,39 +4211,68 @@ function laporanRows(key){
     }));
   }
   if(key === "pelanggaran"){
-    return [...DB.violationRecords].sort((a,b)=> new Date(b.date)-new Date(a.date)).map(r=>{
-      const s = studentById(r.studentId), t = typeById(r.typeId);
-      return {
-        "Nama Siswa": s?s.name:"(dihapus)", "Jenis Pelanggaran": t?t.name:"(dihapus)", "Poin": t?t.points:0,
-        "Tanggal": formatDate(r.date), "Jam": r.time||"-", "Dicatat Oleh": r.teacher||"-", "Catatan": r.note||"-",
-      };
-    });
+    return [...DB.violationRecords]
+      .filter(r=> matchesDateFilter(r.date, filter))
+      .sort((a,b)=> new Date(b.date)-new Date(a.date))
+      .map(r=>{
+        const s = studentById(r.studentId), t = typeById(r.typeId);
+        return {
+          "Nama Siswa": s?s.name:"(dihapus)", "Jenis Pelanggaran": t?t.name:"(dihapus)", "Poin": t?t.points:0,
+          "Tanggal": formatDate(r.date), "Jam": r.time||"-", "Dicatat Oleh": r.teacher||"-", "Catatan": r.note||"-",
+        };
+      });
   }
   if(key === "pembayaran"){
     const rows = [];
+    const yearsInData = [...new Set(DB.payments.map(p=>parseInt(p.month.split("-")[0],10)))];
+    const years = filter.year ? [parseInt(filter.year,10)] : (yearsInData.length ? yearsInData : [CURRENT_YEAR]);
+    const months = filter.month !== "" ? [parseInt(filter.month,10)] : Array.from({length:12},(_,i)=>i);
     DB.students.forEach(s=>{
-      Array.from({length:12}, (_,i)=> monthKey(dashboardSelectedYear, i)).forEach(mKey=>{
-        const st = paymentStatus(s.id, mKey);
-        rows.push({
-          "Nama Siswa": s.name, "Kelas": s.kelas||"-", "Bulan": mKey,
-          "Status": st==="paid" ? "Lunas" : "Belum Lunas",
+      years.forEach(y=>{
+        months.forEach(mi=>{
+          const mKey = monthKey(y, mi);
+          const st = paymentStatus(s.id, mKey);
+          rows.push({
+            "Nama Siswa": s.name, "Kelas": s.kelas||"-", "Bulan": `${MONTHS_ID[mi]} ${y}`,
+            "Status": st==="paid" ? "Lunas" : "Belum Lunas",
+            "Nominal Dibayar": st==="paid" ? formatRupiah(paymentAmountPaid(s.id, mKey)) : "-",
+          });
         });
       });
     });
     return rows;
   }
+  if(key === "pengeluaran"){
+    return [...DB.expenses]
+      .filter(e=> matchesDateFilter(e.date, filter))
+      .sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt))
+      .map(e=>({
+        "Tanggal": formatDate(e.date), "Jam": e.time||"-",
+        "Keterangan / Barang": e.itemName || (e.type==="total" ? "Pengeluaran" : "-"),
+        "Jumlah": e.qty != null ? e.qty : "-",
+        "Harga Satuan": e.price != null ? formatRupiah(e.price) : "-",
+        "Total": formatRupiah(e.amount),
+      }));
+  }
   if(key === "izin"){
-    const visits = (DB.visits||[]).map(v=>({
-      "Tipe": "Kunjungan", "Nama Siswa": (studentById(v.studentId)||{}).name || "(dihapus)",
-      "Keperluan": v.keperluan||"-", "Tanggal/Hari": v.day||"-", "Waktu": v.time||"-",
-      "Diajukan Oleh": v.requestedBy||"-", "Status": v.status||"-", "Dibuat": formatDate(v.createdAt),
-    }));
-    const izin = (DB.izinRequests||[]).map(r=>({
-      "Tipe": "Izin", "Nama Siswa": (studentById(r.studentId)||{}).name || "(dihapus)",
-      "Keperluan": r.keperluan||"-", "Tanggal/Hari": `${formatDate(r.startDate)} - ${formatDate(r.endDate)}`, "Waktu": "-",
-      "Diajukan Oleh": r.requestedBy||"-", "Status": r.status||"-", "Dibuat": formatDate(r.createdAt),
-    }));
-    return [...izin, ...visits];
+    return [...(DB.izinRequests||[])]
+      .filter(r=> matchesDateFilter(r.startDate, filter))
+      .sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt))
+      .map(r=>({
+        "Nama Siswa": (studentById(r.studentId)||{}).name || "(dihapus)",
+        "Keperluan": r.keperluan||"-", "Mulai": formatDate(r.startDate), "Selesai": formatDate(r.endDate),
+        "Diajukan Oleh": r.requestedBy||"-", "Status": r.status||"-", "Dibuat": formatDate(r.createdAt),
+      }));
+  }
+  if(key === "kunjungan"){
+    return [...(DB.visits||[])]
+      .filter(v=> matchesDateFilter(v.createdAt, filter))
+      .sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt))
+      .map(v=>({
+        "Nama Siswa": (studentById(v.studentId)||{}).name || "(dihapus)",
+        "Hari": v.day||"-", "Waktu": v.time||"-", "Keperluan": v.keperluan||"-",
+        "Diajukan Oleh": v.requestedBy||"-", "Status": v.status||"-", "Diajukan Pada": formatDate(v.createdAt),
+      }));
   }
   return [];
 }
@@ -4191,8 +4283,14 @@ function laporanFileName(key, ext){
   return `Laporan_${safe}_${todayISO()}.${ext}`;
 }
 
-function exportLaporanExcel(key){
-  const rows = laporanRows(key);
+function downloadLaporan(){
+  const key = laporanState.type;
+  if(laporanState.format === "pdf") exportLaporanPDF(key, currentLaporanFilter());
+  else exportLaporanExcel(key, currentLaporanFilter());
+}
+
+function exportLaporanExcel(key, filter){
+  const rows = laporanRows(key, filter);
   if(!rows.length){ toast("Tidak ada data untuk diexport.", "error"); return; }
   if(!window.XLSX){ toast("Library Excel belum siap, coba lagi sebentar.", "error"); return; }
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -4202,8 +4300,8 @@ function exportLaporanExcel(key){
   toast("Laporan Excel berhasil diunduh.");
 }
 
-function exportLaporanPDF(key){
-  const rows = laporanRows(key);
+function exportLaporanPDF(key, filter){
+  const rows = laporanRows(key, filter);
   if(!rows.length){ toast("Tidak ada data untuk diexport.", "error"); return; }
   if(!window.jspdf){ toast("Library PDF belum siap, coba lagi sebentar.", "error"); return; }
   const { jsPDF } = window.jspdf;
@@ -4218,6 +4316,40 @@ function exportLaporanPDF(key){
   doc.autoTable({ head, body, startY: 26, styles: { fontSize: 8 }, headStyles: { fillColor: [0,93,167] } });
   doc.save(laporanFileName(key, "pdf"));
   toast("Laporan PDF berhasil diunduh.");
+}
+
+/* Cetak langsung lewat dialog print browser (tanpa perlu mengunduh file dulu). */
+function printLaporan(){
+  const key = laporanState.type;
+  const filter = currentLaporanFilter();
+  const rows = laporanRows(key, filter);
+  if(!rows.length){ toast("Tidak ada data untuk dicetak.", "error"); return; }
+  const lt = LAPORAN_TYPES.find(l=>l.key===key);
+  const headers = Object.keys(rows[0]);
+  const win = window.open("", "_blank");
+  if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
+  win.document.write(`
+    <html><head><title>${escapeHtml(lt?lt.label:key)}</title>
+    <style>
+      body{ font-family: Arial, Helvetica, sans-serif; padding: 24px; color:#111; }
+      h1{ font-size: 16px; margin: 0 0 2px; }
+      p.sub{ font-size: 11px; color:#555; margin: 0 0 16px; }
+      table{ width:100%; border-collapse: collapse; font-size: 11px; }
+      th, td{ border: 1px solid #ccc; padding: 6px 8px; text-align:left; }
+      th{ background:#f2f2f2; }
+      @media print { body{ padding: 8px; } }
+    </style></head><body>
+      <h1>Laporan ${escapeHtml(lt?lt.label:key)} — SMK Muhammadiyah Kendari</h1>
+      <p class="sub">Dicetak: ${formatDate(todayISO())}</p>
+      <table>
+        <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]))}</td>`).join("")}</tr>`).join("")}</tbody>
+      </table>
+    </body></html>
+  `);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>{ win.print(); }, 350);
 }
 
 /* =========================================================
@@ -4584,9 +4716,9 @@ function renderTeacherExpenses(){
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
       <div class="p-5 flex flex-wrap gap-4">
         <div class="relative" id="expenses-filter-card">
-          <button onclick="toggleExpensesFilterPicker(event)" class="flex items-center gap-2 bg-error-container text-on-error-container rounded-xl px-4 py-2.5 hover:shadow-md transition-all">
+          <button onclick="toggleExpensesFilterPicker(event)" class="flex items-center gap-2 bg-error-container text-on-error-container rounded-xl px-4 py-3 min-w-[240px] hover:shadow-md transition-all">
             <span class="material-symbols-outlined text-[20px]">trending_down</span>
-            <span class="text-left">
+            <span class="text-left flex-1">
               <span class="block text-[10px] uppercase font-semibold opacity-80">Uang Keluar (${EXPENSES_FILTER_LABEL[ef.mode]})</span>
               <span class="block text-sm font-bold">${formatRupiah(filteredTotal)}</span>
             </span>
@@ -4629,12 +4761,11 @@ function renderTeacherExpenses(){
               </div>
             ` : ""}
           </div>
-          <p class="text-[11px] text-on-surface-variant mt-1.5">Klik untuk pilih semua, bulan tertentu, atau rentang bulan &amp; tahun.</p>
         </div>
 
-        <div class="flex items-center gap-2 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl px-4 py-2.5">
+        <div class="flex items-center gap-2 bg-tertiary-fixed text-on-tertiary-fixed rounded-xl px-4 py-3 min-w-[240px]">
           <span class="material-symbols-outlined text-[20px]">account_balance</span>
-          <span class="text-left">
+          <span class="text-left flex-1">
             <span class="block text-[10px] uppercase font-semibold opacity-80">Saldo Sekolah Saat Ini</span>
             <span class="block text-sm font-bold">${formatRupiah(balance)}</span>
           </span>
@@ -4654,15 +4785,15 @@ function renderTeacherExpenses(){
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label class="text-xs font-medium text-on-surface-variant block mb-1">Nama Barang</label>
-              <input id="expense-item-name" type="text" placeholder="cth. Spidol Whiteboard" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+              <textarea id="expense-item-name" rows="1" placeholder="cth. Spidol Whiteboard" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
             </div>
             <div>
               <label class="text-xs font-medium text-on-surface-variant block mb-1">Jumlah <span class="normal-case font-normal text-[10px]">(opsional)</span></label>
-              <input id="expense-item-qty" type="number" min="0" placeholder="cth. 5" oninput="updateExpenseItemTotalPreview()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+              <textarea id="expense-item-qty" rows="1" inputmode="numeric" placeholder="cth. 5" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this); updateExpenseItemTotalPreview()"></textarea>
             </div>
             <div>
               <label class="text-xs font-medium text-on-surface-variant block mb-1">Harga <span class="normal-case font-normal text-[10px]">(ribuan, cth. 15 = Rp15.000, opsional)</span></label>
-              <input id="expense-item-price" type="number" min="0" placeholder="cth. 15" oninput="updateExpenseItemTotalPreview()" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+              <textarea id="expense-item-price" rows="1" inputmode="decimal" placeholder="cth. 15" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this); updateExpenseItemTotalPreview()"></textarea>
             </div>
           </div>
           <p class="text-xs text-on-surface-variant mt-2">Total: <span id="expense-item-total-preview" class="font-semibold text-on-surface">Rp0</span> • Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>
@@ -4671,11 +4802,11 @@ function renderTeacherExpenses(){
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label class="text-xs font-medium text-on-surface-variant block mb-1">Keterangan <span class="normal-case font-normal text-[10px]">(opsional)</span></label>
-              <input id="expense-total-desc" type="text" placeholder="cth. Kebutuhan operasional bulan ini" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+              <textarea id="expense-total-desc" rows="1" placeholder="cth. Kebutuhan operasional bulan ini" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
             </div>
             <div>
               <label class="text-xs font-medium text-on-surface-variant block mb-1">Jumlah Pengeluaran <span class="normal-case font-normal text-[10px]">(ribuan, cth. 500 = Rp500.000)</span></label>
-              <input id="expense-total-amount" type="number" min="0" placeholder="cth. 500" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm"/>
+              <textarea id="expense-total-amount" rows="1" inputmode="decimal" placeholder="cth. 500" class="autogrow-input w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
             </div>
           </div>
           <p class="text-xs text-on-surface-variant mt-2">Tanggal &amp; jam tercatat otomatis sesuai perangkat.</p>

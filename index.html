@@ -2901,6 +2901,8 @@ let expensesFilter = {
   toYear: CURRENT_YEAR, toMonthIndex: 11,
 };
 let expenseInputMode = "item"; // 'item' (per barang) | 'total' (langsung keseluruhan)
+let paymentsMoneyType = "bulanan"; // 'bulanan' (Bulanan Santri) | 'infaq' (Infaq Santri)
+let paymentsMoneySearch = ""; // kata kunci pencarian nama siswa di tabel Bulanan Santri
 
 const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 
@@ -2931,9 +2933,10 @@ function seedData(){
   const expenses = [];
   const visits = [];
   const izinRequests = [];
+  const infaq = [];
   const settings = { parentToken: genToken() };
   const classList = ["X", "XI", "XII"];
-  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, settings, classList };
+  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, infaq, settings, classList };
 }
 
 function genToken(){
@@ -2966,6 +2969,7 @@ async function loadDB(){
       if (!DB.visits) DB.visits = [];
       if (!DB.expenses) DB.expenses = [];
       if (!DB.izinRequests) DB.izinRequests = [];
+      if (!DB.infaq) DB.infaq = [];
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
       let needSave = false;
@@ -3711,6 +3715,8 @@ document.addEventListener("click", function(e){
     ["payments-year-card","payments-year-picker"],
     ["payments-revenue-card","payments-revenue-picker"],
     ["expenses-filter-card","expenses-filter-picker"],
+    ["payments-moneytype-card","payments-moneytype-picker"],
+    ["laporan-type-card","laporan-type-picker"],
   ].forEach(([cardId,pickerId])=>{
     const card = document.getElementById(cardId);
     const picker = document.getElementById(pickerId);
@@ -4259,19 +4265,47 @@ const LAPORAN_TYPES = [
   { key: "siswa", label: "Data Siswa", icon: "group", dateFilterable: false },
   { key: "pelanggaran", label: "Riwayat Pelanggaran", icon: "report_problem", dateFilterable: true },
   { key: "pembayaran", label: "Status Pembayaran", icon: "payments", dateFilterable: true },
+  { key: "infaq", label: "Infaq Santri", icon: "volunteer_activism", dateFilterable: true },
   { key: "pengeluaran", label: "Status Pengeluaran", icon: "trending_down", dateFilterable: true },
   { key: "izin", label: "Izin", icon: "assignment_turned_in", dateFilterable: true },
   { key: "kunjungan", label: "Kunjungan Orang Tua", icon: "calendar_month", dateFilterable: true },
 ];
 
 // State pilihan form Laporan — day/month/year kosong ("") berarti "Semua".
-let laporanState = { type: "siswa", dateCategory: "all", date: "", dateFrom: "", dateTo: "", kelasCategory: "all", kelasSelected: [], format: "excel" };
+// types: array — mendukung pemilihan lebih dari satu jenis data sekaligus (digabung jadi satu file).
+let laporanState = { types: ["siswa"], dateCategory: "all", date: "", dateFrom: "", dateTo: "", kelasCategory: "all", kelasSelected: [], format: "excel" };
+
+function toggleLaporanTypePicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("laporan-type-picker");
+  if(picker) picker.classList.toggle("hidden");
+}
+
+function toggleLaporanType(key){
+  const idx = laporanState.types.indexOf(key);
+  if(idx>=0) laporanState.types.splice(idx,1);
+  else laporanState.types.push(key);
+  renderTeacherLaporan();
+  // buka lagi dropdown-nya setelah render supaya guru bisa langsung centang jenis data lain
+  const picker = document.getElementById("laporan-type-picker");
+  if(picker) picker.classList.remove("hidden");
+}
+
+function laporanTypeSummaryLabel(ls){
+  if(!ls.types.length) return "Pilih jenis data";
+  if(ls.types.length===1){
+    const lt = LAPORAN_TYPES.find(l=>l.key===ls.types[0]);
+    return lt ? lt.label : "Pilih jenis data";
+  }
+  return `${ls.types.length} jenis data dipilih`;
+}
 
 function renderTeacherLaporan(){
   const el = document.getElementById("teacher-content");
   const ls = laporanState;
-  const selectedType = LAPORAN_TYPES.find(l=>l.key===ls.type) || LAPORAN_TYPES[0];
-  const isSiswa = selectedType.key === "siswa";
+  const selectedTypes = LAPORAN_TYPES.filter(l=>ls.types.includes(l.key));
+  const isSiswa = ls.types.includes("siswa");
+  const anyDateFilterable = selectedTypes.some(t=>t.dateFilterable);
 
   const dateCategoryHtml = `
     <div class="sm:col-span-2">
@@ -4320,16 +4354,24 @@ function renderTeacherLaporan(){
     </div>` : ""}
   `;
 
-  let helperText;
-  if(selectedType.dateFilterable){
-    if(ls.dateCategory==="all") helperText = "Semua data akan ditampilkan tanpa filter waktu.";
-    else if(ls.dateCategory==="single") helperText = "Hanya data pada tanggal yang dipilih yang akan ditampilkan.";
-    else helperText = "Data akan difilter sesuai rentang tanggal. Kosongkan salah satu untuk rentang terbuka.";
-  } else if(isSiswa){
-    helperText = ls.kelasCategory==="pilih" ? "Hanya siswa dari kelas yang dicentang yang akan ditampilkan." : "Semua siswa dari semua kelas akan ditampilkan.";
+  const helperParts = [];
+  if(!ls.types.length){
+    helperParts.push("Pilih minimal satu jenis data untuk diunduh atau dicetak.");
   } else {
-    helperText = "Data ini tidak memiliki filter tambahan, seluruh data akan ditampilkan.";
+    if(anyDateFilterable){
+      if(ls.dateCategory==="all") helperParts.push("Data bertanggal akan ditampilkan tanpa filter waktu.");
+      else if(ls.dateCategory==="single") helperParts.push("Hanya data bertanggal pada tanggal yang dipilih yang akan ditampilkan.");
+      else helperParts.push("Data bertanggal akan difilter sesuai rentang tanggal. Kosongkan salah satu untuk rentang terbuka.");
+    }
+    if(isSiswa){
+      helperParts.push(ls.kelasCategory==="pilih" ? "Data Siswa hanya menampilkan siswa dari kelas yang dicentang." : "Data Siswa menampilkan semua siswa dari semua kelas.");
+    }
+    if(!anyDateFilterable && !isSiswa){
+      helperParts.push("Data yang dipilih tidak memiliki filter tambahan, seluruh data akan ditampilkan.");
+    }
+    if(ls.types.length>1) helperParts.push("Semua jenis data yang dicentang akan digabung menjadi satu file.");
   }
+  const helperText = helperParts.join(" ");
 
   el.innerHTML = `
     <div class="mb-6">
@@ -4338,14 +4380,24 @@ function renderTeacherLaporan(){
     </div>
     <div class="bg-surface-container-lowest rounded-xl p-6 shadow-sm border border-outline-variant max-w-2xl">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-1">
-        <div class="sm:col-span-2">
+        <div class="sm:col-span-2 relative" id="laporan-type-card">
           <label class="text-xs font-medium text-on-surface-variant block mb-1">Jenis Data</label>
-          <select onchange="setLaporanField('type', this.value)" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest">
-            ${LAPORAN_TYPES.map(lt=>`<option value="${lt.key}" ${lt.key===ls.type?"selected":""}>${lt.label}</option>`).join("")}
-          </select>
+          <button type="button" onclick="toggleLaporanTypePicker(event)" class="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest text-left">
+            <span class="truncate">${laporanTypeSummaryLabel(ls)}</span>
+            <span class="material-symbols-outlined text-[18px] shrink-0 text-on-surface-variant">expand_more</span>
+          </button>
+          <div id="laporan-type-picker" class="hidden absolute left-0 top-full mt-1 z-20 w-full bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg p-2 max-h-64 overflow-y-auto">
+            ${LAPORAN_TYPES.map(lt=>`
+              <label class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-surface-container cursor-pointer text-sm">
+                <input type="checkbox" class="w-4 h-4 accent-primary shrink-0" ${ls.types.includes(lt.key)?"checked":""} onchange="toggleLaporanType('${lt.key}')"/>
+                <span class="material-symbols-outlined text-[18px] text-on-surface-variant">${lt.icon}</span>
+                <span>${lt.label}</span>
+              </label>
+            `).join("")}
+          </div>
         </div>
 
-        ${selectedType.dateFilterable ? dateCategoryHtml : (isSiswa ? kelasCategoryHtml : `<div class="sm:col-span-2"><p class="text-xs italic text-on-surface-variant py-2">Data ini tidak memiliki filter tambahan.</p></div>`)}
+        ${ls.types.length ? (anyDateFilterable ? dateCategoryHtml : "") + (isSiswa ? kelasCategoryHtml : "") : `<div class="sm:col-span-2"><p class="text-xs italic text-on-surface-variant py-2">Pilih jenis data terlebih dahulu.</p></div>`}
 
         <div class="sm:col-span-2">
           <label class="text-xs font-medium text-on-surface-variant block mb-1">Format</label>
@@ -4357,10 +4409,10 @@ function renderTeacherLaporan(){
       </div>
       <p class="text-[11px] text-on-surface-variant mb-4">${helperText}</p>
       <div class="flex gap-3">
-        <button onclick="downloadLaporan()" class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5">
+        <button onclick="downloadLaporan()" ${!ls.types.length?"disabled":""} class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
           <span class="material-symbols-outlined text-[18px]">download</span> Unduh
         </button>
-        <button onclick="printLaporan()" class="flex-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5">
+        <button onclick="printLaporan()" ${!ls.types.length?"disabled":""} class="flex-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
           <span class="material-symbols-outlined text-[18px]">print</span> Print
         </button>
       </div>
@@ -4481,6 +4533,15 @@ function laporanRows(key, filter){
     });
     return rows;
   }
+  if(key === "infaq"){
+    return [...(DB.infaq||[])]
+      .filter(r=> matchesDateFilter(r.date, filter))
+      .sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt))
+      .map(r=>({
+        "Nama": r.name||"-", "Keterangan": r.keterangan||"-", "Jumlah": formatRupiah(r.amount),
+        "Tanggal": formatDate(r.date), "Jam": r.time||"-",
+      }));
+  }
   if(key === "pengeluaran"){
     return [...DB.expenses]
       .filter(e=> matchesDateFilter(e.date, filter))
@@ -4516,59 +4577,100 @@ function laporanRows(key, filter){
   return [];
 }
 
-function laporanFileName(key, ext){
-  const lt = LAPORAN_TYPES.find(l=>l.key===key);
-  const safe = (lt?lt.label:key).replace(/[^a-zA-Z0-9]+/g,"_");
-  return `Laporan_${safe}_${todayISO()}.${ext}`;
+function laporanFileName(keys, ext){
+  if(keys.length===1){
+    const lt = LAPORAN_TYPES.find(l=>l.key===keys[0]);
+    const safe = (lt?lt.label:keys[0]).replace(/[^a-zA-Z0-9]+/g,"_");
+    return `Laporan_${safe}_${todayISO()}.${ext}`;
+  }
+  return `Laporan_Gabungan_${keys.length}Jenis_${todayISO()}.${ext}`;
 }
 
 function downloadLaporan(){
-  const key = laporanState.type;
-  if(laporanState.format === "pdf") exportLaporanPDF(key, currentLaporanFilter());
-  else exportLaporanExcel(key, currentLaporanFilter());
+  const keys = laporanState.types;
+  if(!keys.length){ toast("Pilih minimal satu jenis data.", "error"); return; }
+  if(laporanState.format === "pdf") exportLaporanPDF(keys, currentLaporanFilter());
+  else exportLaporanExcel(keys, currentLaporanFilter());
 }
 
-function exportLaporanExcel(key, filter){
-  const rows = laporanRows(key, filter);
-  if(!rows.length){ toast("Tidak ada data untuk diexport.", "error"); return; }
+/* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file Excel (satu sheet per jenis). */
+function exportLaporanExcel(keys, filter){
   if(!window.XLSX){ toast("Library Excel belum siap, coba lagi sebentar.", "error"); return; }
-  const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Laporan");
-  XLSX.writeFile(wb, laporanFileName(key, "xlsx"));
+  const usedNames = new Set();
+  let anyRows = false;
+  keys.forEach(key=>{
+    const rows = laporanRows(key, filter);
+    const lt = LAPORAN_TYPES.find(l=>l.key===key);
+    if(!rows.length) return;
+    anyRows = true;
+    let sheetName = (lt?lt.label:key).replace(/[\[\]\*\/\\\?:]/g,"").slice(0,31) || key;
+    let i = 2;
+    while(usedNames.has(sheetName)){ sheetName = sheetName.slice(0, 28) + "_" + i; i++; }
+    usedNames.add(sheetName);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+  if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
+  XLSX.writeFile(wb, laporanFileName(keys, "xlsx"));
   toast("Laporan Excel berhasil diunduh.");
 }
 
-function exportLaporanPDF(key, filter){
-  const rows = laporanRows(key, filter);
-  if(!rows.length){ toast("Tidak ada data untuk diexport.", "error"); return; }
+/* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file PDF (satu halaman per jenis). */
+function exportLaporanPDF(keys, filter){
   if(!window.jspdf){ toast("Library PDF belum siap, coba lagi sebentar.", "error"); return; }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "landscape" });
-  const lt = LAPORAN_TYPES.find(l=>l.key===key);
-  doc.setFontSize(14);
-  doc.text(`Laporan ${lt?lt.label:key} - SMK Muhammadiyah Kendari`, 14, 15);
-  doc.setFontSize(9);
-  doc.text(`Diunduh: ${formatDate(todayISO())}`, 14, 21);
-  const head = [Object.keys(rows[0])];
-  const body = rows.map(r => Object.values(r));
-  doc.autoTable({ head, body, startY: 26, styles: { fontSize: 8 }, headStyles: { fillColor: [0,93,167] } });
-  doc.save(laporanFileName(key, "pdf"));
+  let anyRows = false, isFirstPage = true;
+  keys.forEach(key=>{
+    const rows = laporanRows(key, filter);
+    if(!rows.length) return;
+    if(!isFirstPage) doc.addPage();
+    isFirstPage = false;
+    anyRows = true;
+    const lt = LAPORAN_TYPES.find(l=>l.key===key);
+    doc.setFontSize(14);
+    doc.text(`Laporan ${lt?lt.label:key} - SMK Muhammadiyah Kendari`, 14, 15);
+    doc.setFontSize(9);
+    doc.text(`Diunduh: ${formatDate(todayISO())}`, 14, 21);
+    const head = [Object.keys(rows[0])];
+    const body = rows.map(r => Object.values(r));
+    doc.autoTable({ head, body, startY: 26, styles: { fontSize: 8 }, headStyles: { fillColor: [0,93,167] } });
+  });
+  if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
+  doc.save(laporanFileName(keys, "pdf"));
   toast("Laporan PDF berhasil diunduh.");
 }
 
-/* Cetak langsung lewat dialog print browser (tanpa perlu mengunduh file dulu). */
+/* Cetak langsung lewat dialog print browser (tanpa perlu mengunduh file dulu).
+   Mendukung satu atau beberapa jenis data sekaligus — tiap jenis dicetak sebagai section terpisah,
+   dengan jeda halaman (page-break) di antaranya saat benar-benar dicetak. */
 function printLaporan(){
-  const key = laporanState.type;
+  const keys = laporanState.types;
+  if(!keys.length){ toast("Pilih minimal satu jenis data.", "error"); return; }
   const filter = currentLaporanFilter();
-  const rows = laporanRows(key, filter);
-  if(!rows.length){ toast("Tidak ada data untuk dicetak.", "error"); return; }
-  const lt = LAPORAN_TYPES.find(l=>l.key===key);
-  const headers = Object.keys(rows[0]);
+  const sections = [];
+  keys.forEach(key=>{
+    const rows = laporanRows(key, filter);
+    if(!rows.length) return;
+    const lt = LAPORAN_TYPES.find(l=>l.key===key);
+    const headers = Object.keys(rows[0]);
+    sections.push(`
+      <div class="section">
+        <h1>Laporan ${escapeHtml(lt?lt.label:key)} — SMK Muhammadiyah Kendari</h1>
+        <p class="sub">Dicetak: ${formatDate(todayISO())}</p>
+        <table>
+          <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+          <tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]))}</td>`).join("")}</tr>`).join("")}</tbody>
+        </table>
+      </div>
+    `);
+  });
+  if(!sections.length){ toast("Tidak ada data untuk dicetak.", "error"); return; }
   const win = window.open("", "_blank");
   if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
   win.document.write(`
-    <html><head><title>${escapeHtml(lt?lt.label:key)}</title>
+    <html><head><title>Laporan</title>
     <style>
       body{ font-family: Arial, Helvetica, sans-serif; padding: 24px; color:#111; }
       h1{ font-size: 16px; margin: 0 0 2px; }
@@ -4576,14 +4678,13 @@ function printLaporan(){
       table{ width:100%; border-collapse: collapse; font-size: 11px; }
       th, td{ border: 1px solid #ccc; padding: 6px 8px; text-align:left; }
       th{ background:#f2f2f2; }
-      @media print { body{ padding: 8px; } }
+      .section + .section{ margin-top: 32px; }
+      @media print {
+        body{ padding: 8px; }
+        .section + .section{ page-break-before: always; margin-top: 0; }
+      }
     </style></head><body>
-      <h1>Laporan ${escapeHtml(lt?lt.label:key)} — SMK Muhammadiyah Kendari</h1>
-      <p class="sub">Dicetak: ${formatDate(todayISO())}</p>
-      <table>
-        <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
-        <tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]))}</td>`).join("")}</tr>`).join("")}</tbody>
-      </table>
+      ${sections.join("")}
     </body></html>
   `);
   win.document.close();
@@ -4876,6 +4977,32 @@ function renderTeacherPayments(){
         </div>
       </div>
 
+      <div class="px-5 py-4 border-b border-outline-variant relative" id="payments-moneytype-card">
+        <label class="text-xs font-medium text-on-surface-variant block mb-1">Pilih Jenis Uang</label>
+        <button type="button" onclick="togglePaymentsMoneyTypePicker(event)" class="w-full sm:w-72 flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest text-left">
+          <span class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-[18px] text-on-surface-variant">${paymentsMoneyType==='infaq'?'volunteer_activism':'payments'}</span>
+            ${paymentsMoneyType==='infaq' ? 'Infaq Santri' : 'Bulanan Santri'}
+          </span>
+          <span class="material-symbols-outlined text-[18px] text-on-surface-variant">expand_more</span>
+        </button>
+        <div id="payments-moneytype-picker" class="hidden absolute left-5 top-full mt-1 z-20 w-full sm:w-72 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-lg overflow-hidden">
+          <button onclick="selectPaymentsMoneyType('bulanan')" class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-surface-container transition-colors ${paymentsMoneyType==='bulanan'?'bg-primary/10 text-primary font-semibold':''}">
+            <span class="material-symbols-outlined text-[18px]">payments</span> Bulanan Santri
+          </button>
+          <button onclick="selectPaymentsMoneyType('infaq')" class="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-surface-container transition-colors border-t border-outline-variant ${paymentsMoneyType==='infaq'?'bg-primary/10 text-primary font-semibold':''}">
+            <span class="material-symbols-outlined text-[18px]">volunteer_activism</span> Infaq Santri
+          </button>
+        </div>
+      </div>
+
+      ${paymentsMoneyType === 'infaq' ? renderInfaqSectionHtml() : `
+      <div class="px-5 pt-4">
+        <div class="relative max-w-xs">
+          <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">search</span>
+          <input id="payments-search-input" type="text" value="${escapeHtml(paymentsMoneySearch)}" placeholder="Cari nama siswa..." oninput="filterPaymentsBulananTable(this.value)" class="w-full pl-9 pr-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+        </div>
+      </div>
       <div id="payments-table-scroll" class="overflow-x-auto custom-scrollbar">
         <table class="w-full text-left text-sm min-w-[1050px]">
           <thead>
@@ -4887,7 +5014,7 @@ function renderTeacherPayments(){
           </thead>
           <tbody>
             ${DB.students.map(s=>`
-              <tr class="border-t border-outline-variant">
+              <tr class="border-t border-outline-variant" data-sname="${escapeHtml(s.name.toLowerCase())}" style="${paymentsMoneySearch && !s.name.toLowerCase().includes(paymentsMoneySearch.trim().toLowerCase()) ? 'display:none;' : ''}">
                 <td class="p-3 font-medium sticky left-0 bg-surface-container-lowest">${s.name}</td>
                 <td class="p-3 text-center">
                   <input type="number" min="0" placeholder="0" value="${s.monthlyFee || ""}"
@@ -4921,10 +5048,130 @@ function renderTeacherPayments(){
           </tbody>
         </table>
       </div>
+      `}
     </div>
   `;
   const newScrollBox = document.getElementById("payments-table-scroll");
   if(newScrollBox) newScrollBox.scrollLeft = prevScrollLeft;
+}
+
+function togglePaymentsMoneyTypePicker(event){
+  event.stopPropagation();
+  const picker = document.getElementById("payments-moneytype-picker");
+  if(picker) picker.classList.toggle("hidden");
+}
+function selectPaymentsMoneyType(type){
+  paymentsMoneyType = type;
+  paymentsMoneySearch = "";
+  renderTeacherPayments();
+}
+
+/* Filter baris tabel Bulanan Santri langsung lewat DOM (tanpa render ulang) supaya fokus input pencarian tidak hilang. */
+function filterPaymentsBulananTable(query){
+  paymentsMoneySearch = query;
+  const q = query.trim().toLowerCase();
+  document.querySelectorAll('#payments-table-scroll tbody tr[data-sname]').forEach(tr=>{
+    tr.style.display = (!q || tr.dataset.sname.includes(q)) ? "" : "none";
+  });
+}
+
+/* =========================================================
+   TEACHER: Infaq Santri (bagian dari halaman Pembayaran)
+   ========================================================= */
+function infaqTotalAmount(){
+  return (DB.infaq||[]).reduce((sum,r)=> sum + (Number(r.amount)||0), 0);
+}
+
+function renderInfaqSectionHtml(){
+  const list = [...(DB.infaq||[])].sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  return `
+    <div class="p-5">
+      <div class="bg-surface rounded-xl border border-outline-variant p-4 mb-5 max-w-2xl">
+        <h5 class="font-semibold text-sm mb-3">Tambah Infaq Santri</h5>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label class="text-xs text-on-surface-variant block mb-1">Nama</label>
+            <input id="infaq-name" type="text" placeholder="Nama pemberi infaq" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          </div>
+          <div>
+            <label class="text-xs text-on-surface-variant block mb-1">Keterangan</label>
+            <input id="infaq-desc" type="text" placeholder="cth. Infaq Jumat" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          </div>
+          <div>
+            <label class="text-xs text-on-surface-variant block mb-1">Jumlah (ribuan, cth. 50 = Rp50.000)</label>
+            <input id="infaq-amount" type="number" min="0" placeholder="cth. 50" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+          </div>
+        </div>
+        <p id="infaq-form-error" class="hidden text-error text-xs mb-2"></p>
+        <button onclick="saveInfaq()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold px-4 py-2.5 hover:shadow-md transition-all flex items-center gap-1.5">
+          <span class="material-symbols-outlined text-[18px]">save</span> Simpan
+        </button>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <h5 class="font-semibold text-sm">Riwayat Infaq Santri</h5>
+        <span class="text-xs text-on-surface-variant">Total terkumpul: <span class="font-semibold text-on-surface">${formatRupiah(infaqTotalAmount())}</span></span>
+      </div>
+      <div class="overflow-x-auto custom-scrollbar rounded-lg border border-outline-variant">
+        <table class="w-full text-left text-sm min-w-[620px]">
+          <thead>
+            <tr class="bg-surface text-on-surface-variant text-xs uppercase">
+              <th class="p-3">Nama</th>
+              <th class="p-3">Keterangan</th>
+              <th class="p-3 text-right">Jumlah</th>
+              <th class="p-3">Waktu</th>
+              <th class="p-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${list.map(r=>`
+              <tr class="border-t border-outline-variant">
+                <td class="p-3 font-medium">${escapeHtml(r.name)}</td>
+                <td class="p-3">${escapeHtml(r.keterangan || "-")}</td>
+                <td class="p-3 text-right font-semibold">${formatRupiah(r.amount)}</td>
+                <td class="p-3 text-xs text-on-surface-variant whitespace-nowrap">${formatDate(r.date)} • ${r.time||"-"}</td>
+                <td class="p-3 text-right">
+                  <button onclick="deleteInfaq('${r.id}')" class="text-error hover:underline text-xs font-medium">Hapus</button>
+                </td>
+              </tr>`).join("")}
+            ${list.length===0?`<tr><td colspan="5" class="p-6 text-center text-on-surface-variant">Belum ada data infaq.</td></tr>`:""}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+async function saveInfaq(){
+  const nameEl = document.getElementById("infaq-name");
+  const descEl = document.getElementById("infaq-desc");
+  const amountEl = document.getElementById("infaq-amount");
+  const errEl = document.getElementById("infaq-form-error");
+  const name = nameEl.value.trim();
+  const keterangan = descEl.value.trim();
+  const amount = parseInt(amountEl.value, 10);
+  if(!name || !amount || amount <= 0){
+    errEl.textContent = "Nama dan jumlah wajib diisi dengan benar.";
+    errEl.classList.remove("hidden");
+    return;
+  }
+  errEl.classList.add("hidden");
+  if(!DB.infaq) DB.infaq = [];
+  DB.infaq.push({
+    id: uid("inf"), name, keterangan, amount,
+    date: todayISO(), time: nowHHMM(), createdAt: new Date().toISOString(),
+  });
+  await saveDB();
+  renderTeacherPayments();
+  toast("Infaq berhasil disimpan.");
+}
+
+async function deleteInfaq(id){
+  if(!confirm("Hapus data infaq ini?")) return;
+  DB.infaq = (DB.infaq||[]).filter(r=>r.id!==id);
+  await saveDB();
+  renderTeacherPayments();
+  toast("Data infaq dihapus.");
 }
 
 const PAYMENTS_REVENUE_LABEL = { all: "Semua", month: "Bulan Ini", range: "Rentang" };

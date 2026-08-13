@@ -11,6 +11,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+<!-- Library untuk grafik naik-turun (trend chart) di Dashboard -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
@@ -3399,12 +3401,126 @@ const DASHBOARD_VIOLATION_PERIOD_LABEL = {
 /* =========================================================
    TEACHER: Dashboard
    ========================================================= */
+/* =========================================================
+   DASHBOARD: Data grafik naik-turun (6 bulan terakhir)
+   ========================================================= */
+function last6MonthsMeta(){
+  const arr = [];
+  const now = new Date();
+  for(let i=5;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    arr.push({ key: monthKey(d.getFullYear(), d.getMonth()), label: MONTHS_ID[d.getMonth()].slice(0,3)+"/"+String(d.getFullYear()).slice(2) });
+  }
+  return arr;
+}
+
+function dashboardPaymentSeries(){
+  const months = last6MonthsMeta();
+  return { labels: months.map(m=>m.label), data: months.map(m=> totalRevenueForMonths([m.key])) };
+}
+
+function dashboardExpenseSeries(){
+  const months = last6MonthsMeta();
+  const data = months.map(m=> DB.expenses.filter(e=> e.date && e.date.slice(0,7)===m.key).reduce((s,e)=> s+(e.amount||0), 0));
+  return { labels: months.map(m=>m.label), data };
+}
+
+/* Saldo kas sekolah kumulatif (uang masuk - uang keluar) sampai akhir tiap bulan. */
+function dashboardCashSeries(){
+  const months = last6MonthsMeta();
+  const data = months.map(m=>{
+    let revenue = 0, expense = 0;
+    DB.payments.forEach(p=>{ if(p.status==="paid" && p.month<=m.key) revenue += paymentAmountPaid(p.studentId, p.month); });
+    DB.expenses.forEach(e=>{ if(e.date && e.date.slice(0,7)<=m.key) expense += (e.amount||0); });
+    return revenue - expense;
+  });
+  return { labels: months.map(m=>m.label), data };
+}
+
+function dashboardViolationSeries(){
+  const months = last6MonthsMeta();
+  const data = months.map(m=> DB.violationRecords.filter(r=> r.date && r.date.slice(0,7)===m.key).length);
+  return { labels: months.map(m=>m.label), data };
+}
+
+function dashboardIzinVisitSeries(){
+  const months = last6MonthsMeta();
+  const data = months.map(m=>{
+    const izin = DB.izinRequests.filter(r=> r.createdAt && r.createdAt.slice(0,7)===m.key).length;
+    const visit = DB.visits.filter(v=> v.createdAt && v.createdAt.slice(0,7)===m.key).length;
+    return izin + visit;
+  });
+  return { labels: months.map(m=>m.label), data };
+}
+
+/* Label kecil naik/turun/stabil di atas tiap grafik.
+   goodDirection: 'up' jika naik itu kabar baik (mis. pembayaran), 'down' jika naik itu kabar buruk
+   (mis. uang keluar & pelanggaran), atau null jika netral (mis. izin & jenguk). */
+function trendBadge(data, goodDirection){
+  if(!data || data.length<2) return "";
+  const last = data[data.length-1], prev = data[data.length-2];
+  let dir = last>prev ? "up" : (last<prev ? "down" : "flat");
+  let icon = "trending_flat", text = "Stabil", colorClass = "text-on-surface-variant";
+  if(dir==="up"){ icon="trending_up"; text="Naik"; colorClass = goodDirection==="up" ? "text-secondary" : (goodDirection==="down" ? "text-error" : "text-on-surface-variant"); }
+  if(dir==="down"){ icon="trending_down"; text="Turun"; colorClass = goodDirection==="down" ? "text-secondary" : (goodDirection==="up" ? "text-error" : "text-on-surface-variant"); }
+  return `<span class="text-xs font-semibold ${colorClass} flex items-center gap-0.5"><span class="material-symbols-outlined text-[16px]">${icon}</span>${text}</span>`;
+}
+
+/* Menggambar/menggambar-ulang seluruh grafik dashboard memakai Chart.js.
+   Instance lama dihancurkan dulu supaya tidak menumpuk saat dashboard dirender ulang. */
+function renderDashboardCharts(){
+  if(typeof Chart === "undefined") return;
+  if(!window.__dashboardCharts) window.__dashboardCharts = {};
+  const configs = [
+    { id:"chart-payment", series: dashboardPaymentSeries(), color:"#005da7", label:"Pembayaran" },
+    { id:"chart-expense", series: dashboardExpenseSeries(), color:"#ba1a1a", label:"Uang Keluar" },
+    { id:"chart-cash", series: dashboardCashSeries(), color:"#006a62", label:"Uang Kas" },
+    { id:"chart-violation", series: dashboardViolationSeries(), color:"#a86500", label:"Pelanggaran" },
+    { id:"chart-izinvisit", series: dashboardIzinVisitSeries(), color:"#2976c7", label:"Izin & Jenguk" },
+  ];
+  configs.forEach(cfg=>{
+    const canvas = document.getElementById(cfg.id);
+    if(!canvas) return;
+    if(window.__dashboardCharts[cfg.id]) window.__dashboardCharts[cfg.id].destroy();
+    window.__dashboardCharts[cfg.id] = new Chart(canvas.getContext("2d"), {
+      type: "line",
+      data: {
+        labels: cfg.series.labels,
+        datasets: [{
+          label: cfg.label,
+          data: cfg.series.data,
+          borderColor: cfg.color,
+          backgroundColor: cfg.color + "26",
+          fill: true,
+          tension: 0.35,
+          pointRadius: 3,
+          pointBackgroundColor: cfg.color,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display:false } },
+        scales: {
+          x: { grid: { display:false }, ticks: { font: { size:10 } } },
+          y: { beginAtZero: true, ticks: { font: { size:10 } } }
+        }
+      }
+    });
+  });
+}
+
 function renderTeacherDashboard(){
   const el = document.getElementById("teacher-content");
   const studentCount = dashboardStudentCount(dashboardStudentFilter);
   const unpaid = unpaidCountForMonthIndex(dashboardSelectedYear, dashboardSelectedMonthIndex);
   const violCount = violationsCountForPeriod(dashboardViolationPeriod);
-  const recentRecords = [...DB.violationRecords].sort((a,b)=> new Date(b.date)-new Date(a.date)).slice(0,5);
+
+  const paySeries = dashboardPaymentSeries();
+  const expSeries = dashboardExpenseSeries();
+  const cashSeries = dashboardCashSeries();
+  const violSeries = dashboardViolationSeries();
+  const izinSeries = dashboardIzinVisitSeries();
 
   el.innerHTML = `
     <div class="mb-6">
@@ -3482,24 +3598,49 @@ function renderTeacherDashboard(){
       </div>
     </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
-      <div class="p-5 border-b border-outline-variant flex justify-between items-center">
-        <h4 class="font-display font-bold">Pelanggaran Terbaru</h4>
-        <button onclick="teacherGo('log-violation')" class="text-primary text-sm font-semibold hover:underline">+ Catat Baru</button>
+      <div class="p-5 border-b border-outline-variant">
+        <h4 class="font-display font-bold">Grafik Sekolah</h4>
       </div>
-      <div class="divide-y divide-outline-variant">
-        ${recentRecords.length ? recentRecords.map(r=>{
-          const s = studentById(r.studentId), t = typeById(r.typeId);
-          return `<div class="p-4 flex items-center justify-between">
-            <div>
-              <p class="font-semibold text-sm">${s?s.name:"?"}</p>
-              <p class="text-xs text-on-surface-variant">${t?t.name:"?"} • ${formatDate(r.date)}</p>
-            </div>
-            <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full">+${t?t.points:0} pts</span>
-          </div>`;
-        }).join("") : `<p class="p-6 text-sm text-on-surface-variant text-center">Belum ada catatan pelanggaran.</p>`}
+      <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div class="border border-outline-variant rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Pembayaran</p>
+            ${trendBadge(paySeries.data, "up")}
+          </div>
+          <div class="h-40"><canvas id="chart-payment"></canvas></div>
+        </div>
+        <div class="border border-outline-variant rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Uang Keluar</p>
+            ${trendBadge(expSeries.data, "down")}
+          </div>
+          <div class="h-40"><canvas id="chart-expense"></canvas></div>
+        </div>
+        <div class="border border-outline-variant rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Uang Kas Sekolah</p>
+            ${trendBadge(cashSeries.data, "up")}
+          </div>
+          <div class="h-40"><canvas id="chart-cash"></canvas></div>
+        </div>
+        <div class="border border-outline-variant rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Pelanggaran Santri</p>
+            ${trendBadge(violSeries.data, "down")}
+          </div>
+          <div class="h-40"><canvas id="chart-violation"></canvas></div>
+        </div>
+        <div class="border border-outline-variant rounded-xl p-4 md:col-span-2">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Izin & Jenguk</p>
+            ${trendBadge(izinSeries.data, null)}
+          </div>
+          <div class="h-40"><canvas id="chart-izinvisit"></canvas></div>
+        </div>
       </div>
     </div>
   `;
+  setTimeout(renderDashboardCharts, 0);
 }
 
 async function saveAdminEmail(){

@@ -294,7 +294,7 @@ tailwind.config = {
 
 <!-- ============ SURAT IZIN MODAL (Cetak Surat Izin Pulang Santri) ============ -->
 <div id="surat-izin-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeSuratIzinModal()">
-  <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6 max-h-[92vh] overflow-y-auto custom-scrollbar">
+  <div class="relative w-full max-w-md fade-in bg-surface-container-lowest rounded-2xl p-6 max-h-[92vh] overflow-y-auto custom-scrollbar">
     <button onclick="closeSuratIzinModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
       <span class="material-symbols-outlined text-on-surface block">close</span>
     </button>
@@ -351,10 +351,13 @@ tailwind.config = {
         <input id="surat-izin-wa" type="text" placeholder="cth. 08xxxxxxxxxx" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
       </div>
     </div>
-    <div class="flex gap-3 mt-5">
+    <div class="flex gap-2 mt-5">
       <button onclick="closeSuratIzinModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
-      <button onclick="printSuratIzinFromModal()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1.5">
-        <span class="material-symbols-outlined text-[18px]">print</span>Cetak Surat
+      <button id="surat-izin-download-btn" onclick="downloadSuratIzinFromModal()" class="flex-1 bg-secondary-container text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1">
+        <span class="material-symbols-outlined text-[18px]">download</span>Unduh
+      </button>
+      <button onclick="printSuratIzinFromModal()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1">
+        <span class="material-symbols-outlined text-[18px]">print</span>Cetak
       </button>
     </div>
   </div>
@@ -4834,10 +4837,39 @@ function onSuratIzinSumberChange(){
   }
 }
 
-async function printSuratIzinFromModal(){
+// CSS surat izin dipakai bersama oleh jendela cetak (print) & render unduh PDF,
+// supaya tampilan keduanya selalu identik.
+const SURAT_IZIN_CSS = `
+  .surat-izin-sheet{ font-family: 'Times New Roman', Times, serif; color:#111; background:#fff; padding: 32px 48px; font-size: 13px; line-height: 1.55; }
+  .surat-izin-sheet .kop{ display:flex; align-items:center; justify-content:center; gap:16px; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 4px; }
+  .surat-izin-sheet .kop img{ width: 74px; height: 74px; object-fit: contain; flex-shrink:0; }
+  .surat-izin-sheet .kop .sekolah-nama-1{ font-size: 15px; font-weight: bold; letter-spacing: 0.5px; margin: 0; text-align:center; color:#111; }
+  .surat-izin-sheet .kop .sekolah-nama-2{ font-size: 17px; font-weight: bold; letter-spacing: 0.5px; margin: 1px 0 0; text-align:center; color:#1F3864; }
+  .surat-izin-sheet .kop .sekolah-alamat{ font-size: 11px; margin: 3px 0 0; text-align:center; }
+  .surat-izin-sheet .kop-garis-bawah{ border-bottom: 1px solid #111; margin-bottom: 20px; }
+  .surat-izin-sheet h1.judul{ text-align:center; font-size: 15px; font-weight: bold; text-decoration: underline; letter-spacing: 0.5px; margin: 6px 0 20px; }
+  .surat-izin-sheet p{ margin: 0 0 10px; text-align: justify; }
+  .surat-izin-sheet table.surat-info{ border-collapse: collapse; margin: 0 0 14px; }
+  .surat-izin-sheet table.surat-info td{ padding: 1px 4px; font-size: 13px; vertical-align: top; }
+  .surat-izin-sheet table.surat-info td.label{ width: 78px; }
+  .surat-izin-sheet table.surat-info td.colon{ width: 12px; }
+  .surat-izin-sheet table.data-field{ width:100%; border-collapse: collapse; margin: 4px 0 14px; }
+  .surat-izin-sheet table.data-field td{ padding: 3px 4px; font-size: 13px; vertical-align: top; }
+  .surat-izin-sheet table.data-field td.label{ width: 210px; }
+  .surat-izin-sheet table.data-field td.colon{ width: 14px; }
+  .surat-izin-sheet table.ttd{ width:100%; border-collapse: collapse; margin-top: 46px; }
+  .surat-izin-sheet table.ttd td{ width:33.33%; text-align:center; font-size: 13px; vertical-align: top; padding: 0 8px; }
+  .surat-izin-sheet table.ttd .garis-ttd{ margin-top: 64px; }
+  .surat-izin-sheet .catatan{ font-size: 11.5px; font-style: italic; margin-top: 22px; }
+  .surat-izin-sheet .tempat-tanggal{ text-align:right; margin: 26px 0 0; }
+`;
+
+// Mengumpulkan & memvalidasi isian modal, sekaligus menetapkan nomor surat
+// (idempotent). Dipakai bersama oleh fungsi cetak & unduh agar hasil identik.
+async function collectSuratIzinData(){
   const id = document.getElementById("surat-izin-id").value;
   const r = DB.izinRequests.find(x=>x.id===id);
-  if(!r){ toast("Data izin tidak ditemukan.", "error"); return; }
+  if(!r){ toast("Data izin tidak ditemukan.", "error"); return null; }
   const s = studentById(r.studentId);
   const alasan = document.getElementById("surat-izin-alasan").value.trim() || r.keperluan || "-";
   const lampiran = document.getElementById("surat-izin-lampiran").value.trim() || "-";
@@ -4854,46 +4886,22 @@ async function printSuratIzinFromModal(){
   const tglBerangkat = `${dayNameID(r.startDate)}, ${formatDate(r.startDate)}`;
   const tglKembali = `${dayNameID(r.endDate)}, ${formatDate(r.endDate)}`;
 
-  // Nomor surat otomatis: {urutan}/SIP/SMK-MK/{bulan Romawi}/{tahun}, mengikuti
-  // tanggal saat surat dicetak dan tetap konsisten bila surat dicetak ulang.
   const now = new Date();
   const nomorUrut = await getOrAssignNomorSurat(r);
   const nomorSurat = `${String(nomorUrut).padStart(3,"0")}/SIP/SMK-MK/${bulanRomawi(now.getMonth()+1)}/${now.getFullYear()}`;
 
-  // Kalimat pembuka & catatan menyesuaikan sumber permohonan
   const kalimatSumber = sumber === "orangtua"
     ? `Surat izin ini diterbitkan atas permohonan yang diajukan oleh <b>orang tua/wali</b> santri kepada pihak sekolah/pondok.`
     : `Surat izin ini diterbitkan atas permohonan yang diajukan secara langsung oleh <b>santri yang bersangkutan</b> kepada pihak sekolah/pondok.`;
 
-  const win = window.open("", "_blank");
-  if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
-  win.document.write(`
-    <html><head><title>Surat Izin Pulang - ${escapeHtml(namaSantri)}</title>
-    <style>
-      body{ font-family: 'Times New Roman', Times, serif; color:#111; padding: 32px 48px; font-size: 13px; line-height: 1.55; }
-      .kop{ display:flex; align-items:center; justify-content:center; gap:16px; border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 4px; }
-      .kop img{ width: 74px; height: 74px; object-fit: contain; flex-shrink:0; }
-      .kop .sekolah-nama-1{ font-size: 15px; font-weight: bold; letter-spacing: 0.5px; margin: 0; text-align:center; color:#111; }
-      .kop .sekolah-nama-2{ font-size: 17px; font-weight: bold; letter-spacing: 0.5px; margin: 1px 0 0; text-align:center; color:#1F3864; }
-      .kop .sekolah-alamat{ font-size: 11px; margin: 3px 0 0; text-align:center; }
-      .kop-garis-bawah{ border-bottom: 1px solid #111; margin-bottom: 20px; }
-      h1.judul{ text-align:center; font-size: 15px; font-weight: bold; text-decoration: underline; letter-spacing: 0.5px; margin: 6px 0 20px; }
-      p{ margin: 0 0 10px; text-align: justify; }
-      table.surat-info{ border-collapse: collapse; margin: 0 0 14px; }
-      table.surat-info td{ padding: 1px 4px; font-size: 13px; vertical-align: top; }
-      table.surat-info td.label{ width: 78px; }
-      table.surat-info td.colon{ width: 12px; }
-      table.data-field{ width:100%; border-collapse: collapse; margin: 4px 0 14px; }
-      table.data-field td{ padding: 3px 4px; font-size: 13px; vertical-align: top; }
-      table.data-field td.label{ width: 210px; }
-      table.data-field td.colon{ width: 14px; }
-      table.ttd{ width:100%; border-collapse: collapse; margin-top: 46px; }
-      table.ttd td{ width:33.33%; text-align:center; font-size: 13px; vertical-align: top; padding: 0 8px; }
-      table.ttd .garis-ttd{ margin-top: 64px; }
-      .catatan{ font-size: 11.5px; font-style: italic; margin-top: 22px; }
-      .tempat-tanggal{ text-align:right; margin: 26px 0 0; }
-      @media print { body{ padding: 12px 28px; } }
-    </style></head><body>
+  return { r, namaSantri, kelasSantri, alasan, lampiran, perihal, jemput, waPenjemput, tglBerangkat, tglKembali, nomorSurat, kalimatSumber };
+}
+
+// Membangun markup "lembar surat" (tanpa <html>/<head>) yang dipakai baik
+// oleh jendela cetak maupun oleh render unduh PDF.
+function buildSuratIzinSheetHtml(d){
+  return `
+    <div class="surat-izin-sheet">
       <div class="kop">
         <img src="${SCHOOL_LOGO_MARITIM_B64}" alt="Logo SMK Maritim"/>
         <div>
@@ -4909,29 +4917,29 @@ async function printSuratIzinFromModal(){
       <h1 class="judul">SURAT IZIN PULANG SANTRI</h1>
 
       <table class="surat-info">
-        <tr><td class="label">Nomor</td><td class="colon">:</td><td>${nomorSurat}</td></tr>
-        <tr><td class="label">Lampiran</td><td class="colon">:</td><td>${escapeHtml(lampiran)}</td></tr>
-        <tr><td class="label">Perihal</td><td class="colon">:</td><td>${escapeHtml(perihal)}</td></tr>
+        <tr><td class="label">Nomor</td><td class="colon">:</td><td>${d.nomorSurat}</td></tr>
+        <tr><td class="label">Lampiran</td><td class="colon">:</td><td>${escapeHtml(d.lampiran)}</td></tr>
+        <tr><td class="label">Perihal</td><td class="colon">:</td><td>${escapeHtml(d.perihal)}</td></tr>
       </table>
 
       <p>Yang bertanda tangan di bawah ini, pihak sekolah/pondok SMK Maritim Muhammadiyah Kendari menerangkan bahwa memberikan izin pulang kepada santri/siswa berikut:</p>
 
       <table class="data-field">
-        <tr><td class="label">Nama Lengkap</td><td class="colon">:</td><td>${escapeHtml(namaSantri)}</td></tr>
-        <tr><td class="label">Kelas / Program</td><td class="colon">:</td><td>${escapeHtml(kelasSantri)}</td></tr>
+        <tr><td class="label">Nama Lengkap</td><td class="colon">:</td><td>${escapeHtml(d.namaSantri)}</td></tr>
+        <tr><td class="label">Kelas / Program</td><td class="colon">:</td><td>${escapeHtml(d.kelasSantri)}</td></tr>
       </table>
 
       <p>Untuk pulang ke rumah orang tua/wali dengan keterangan sebagai berikut:</p>
 
       <table class="data-field">
-        <tr><td class="label">Alasan / Keperluan</td><td class="colon">:</td><td>${escapeHtml(alasan)}</td></tr>
-        <tr><td class="label">Hari, Tanggal Berangkat</td><td class="colon">:</td><td>${tglBerangkat}</td></tr>
-        <tr><td class="label">Hari, Tanggal Kembali</td><td class="colon">:</td><td>${tglKembali}</td></tr>
-        <tr><td class="label">Dijemput / Diantar Oleh</td><td class="colon">:</td><td>${escapeHtml(jemput)}</td></tr>
-        <tr><td class="label">Nomor WA Penjemput</td><td class="colon">:</td><td>${escapeHtml(waPenjemput)}</td></tr>
+        <tr><td class="label">Alasan / Keperluan</td><td class="colon">:</td><td>${escapeHtml(d.alasan)}</td></tr>
+        <tr><td class="label">Hari, Tanggal Berangkat</td><td class="colon">:</td><td>${d.tglBerangkat}</td></tr>
+        <tr><td class="label">Hari, Tanggal Kembali</td><td class="colon">:</td><td>${d.tglKembali}</td></tr>
+        <tr><td class="label">Dijemput / Diantar Oleh</td><td class="colon">:</td><td>${escapeHtml(d.jemput)}</td></tr>
+        <tr><td class="label">Nomor WA Penjemput</td><td class="colon">:</td><td>${escapeHtml(d.waPenjemput)}</td></tr>
       </table>
 
-      <p>${kalimatSumber}</p>
+      <p>${d.kalimatSumber}</p>
 
       <p>Santri yang bersangkutan wajib kembali ke sekolah/pondok pada tanggal yang telah ditentukan. Apabila terjadi keterlambatan, orang tua/wali wajib segera menghubungi pihak sekolah. Selama dalam perjalanan dan berada di rumah, segala hal yang terjadi di luar tanggung jawab pihak sekolah.</p>
 
@@ -4960,12 +4968,92 @@ async function printSuratIzinFromModal(){
       </table>
 
       <p class="catatan">Catatan: Surat ini merupakan dokumen resmi sekolah dan wajib dibawa/ditunjukkan saat penjemputan serta saat kembali ke sekolah.</p>
+    </div>
+  `;
+}
+
+async function printSuratIzinFromModal(){
+  const d = await collectSuratIzinData();
+  if(!d) return;
+
+  const win = window.open("", "_blank");
+  if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
+  win.document.write(`
+    <html><head><title>Surat Izin Pulang - ${escapeHtml(d.namaSantri)}</title>
+    <style>
+      body{ margin:0; }
+      ${SURAT_IZIN_CSS}
+      @media print { .surat-izin-sheet{ padding: 12px 28px; } }
+    </style></head><body>
+      ${buildSuratIzinSheetHtml(d)}
     </body></html>
   `);
   win.document.close();
   win.focus();
   setTimeout(()=>{ win.print(); }, 350);
   closeSuratIzinModal();
+}
+
+// Mengunduh surat izin sebagai file PDF langsung (tanpa dialog cetak browser),
+// memakai html2canvas untuk "memotret" lembar surat lalu menyusunnya ke PDF A4.
+async function downloadSuratIzinFromModal(){
+  if(typeof html2canvas !== "function" || !window.jspdf){
+    toast("Fitur unduh belum siap, coba lagi sebentar.", "error");
+    return;
+  }
+  const d = await collectSuratIzinData();
+  if(!d) return;
+
+  const btn = document.getElementById("surat-izin-download-btn");
+  const btnOriginalHtml = btn ? btn.innerHTML : "";
+  if(btn){ btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Menyiapkan...`; }
+
+  // Render lembar surat di luar layar (tidak terlihat pengguna) agar bisa "difoto" html2canvas
+  const holder = document.createElement("div");
+  holder.style.position = "fixed";
+  holder.style.left = "-9999px";
+  holder.style.top = "0";
+  holder.style.width = "794px"; // lebar A4 pada 96dpi
+  holder.style.background = "#fff";
+  holder.innerHTML = `<style>${SURAT_IZIN_CSS}</style>${buildSuratIzinSheetHtml(d)}`;
+  document.body.appendChild(holder);
+
+  try {
+    // Beri waktu 1 frame agar gambar logo (base64) selesai didekode sebelum "dipotret"
+    await new Promise(res => requestAnimationFrame(()=>requestAnimationFrame(res)));
+    const canvas = await html2canvas(holder, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgW = pageWidth;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    const imgData = canvas.toDataURL("image/png");
+    if(imgH <= pageHeight){
+      pdf.addImage(imgData, "PNG", 0, 0, imgW, imgH);
+    } else {
+      // Jika kontennya lebih panjang dari satu halaman, potong ke beberapa halaman
+      let heightLeft = imgH;
+      let position = 0;
+      pdf.addImage(imgData, "PNG", 0, position, imgW, imgH);
+      heightLeft -= pageHeight;
+      while(heightLeft > 0){
+        position = heightLeft - imgH;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgW, imgH);
+        heightLeft -= pageHeight;
+      }
+    }
+    const namaFile = (d.namaSantri || "santri").replace(/[^a-z0-9]+/gi, "_");
+    pdf.save(`Surat_Izin_Pulang_${namaFile}_${todayISO()}.pdf`);
+    closeSuratIzinModal();
+  } catch(e){
+    console.error(e);
+    toast("Gagal membuat file PDF. Coba lagi.", "error");
+  } finally {
+    document.body.removeChild(holder);
+    if(btn){ btn.disabled = false; btn.innerHTML = btnOriginalHtml; }
+  }
 }
 
 /* =========================================================

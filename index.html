@@ -6290,10 +6290,11 @@ function renderTeacherReports(){
           </div>
           <p class="text-sm mt-3 whitespace-pre-wrap">${escapeHtml(r.description)}</p>
           ${media}
+          ${r.status !== "baru" && r.points ? `<p class="text-xs text-on-surface-variant mt-2">Poin pelanggaran dicatat: <span class="font-semibold text-error">${r.points} pts</span></p>` : ""}
           <div class="flex flex-wrap gap-2 mt-3">
-            ${r.status !== "selesai" ? `<button onclick="processViolationReport('${r.id}')" class="bg-primary text-on-primary rounded-lg text-xs font-semibold py-2 px-3 hover:shadow-md transition-all">Buat Catatan Pelanggaran</button>` : ""}
+            ${r.status === "baru" ? `<button onclick="processViolationReport('${r.id}')" class="bg-primary text-on-primary rounded-lg text-xs font-semibold py-2 px-3 hover:shadow-md transition-all">Buat Catatan Pelanggaran</button>` : ""}
             ${r.status === "baru" ? `<button onclick="markReportStatus('${r.id}','diproses')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Diproses</button>` : ""}
-            ${r.status !== "selesai" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Selesai</button>` : ""}
+            ${r.status === "diproses" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Selesai</button>` : ""}
             <button onclick="deleteViolationReport('${r.id}')" class="text-error hover:underline text-xs font-semibold ml-auto">Hapus</button>
           </div>
         </div>`;
@@ -6302,74 +6303,118 @@ function renderTeacherReports(){
   `;
 }
 
-// Pastikan ada satu jenis pelanggaran khusus untuk laporan santri yang sudah "Selesai",
+// Pastikan ada jenis pelanggaran khusus untuk laporan santri dengan poin tertentu,
 // supaya laporan tsb bisa otomatis dicatat sebagai riwayat pelanggaran dengan poin yang jelas.
-function ensurePeerReportViolationType(db){
-  let type = (db.violationTypes || []).find(t => t.name === "Laporan Santri (Terbukti)");
+// Poin bisa berbeda-beda tiap laporan (diisi guru saat memproses), jadi dicari/dibuat per nilai poin.
+function ensurePeerReportViolationType(db, points){
+  const pts = Number(points) || 10;
+  let type = (db.violationTypes || []).find(t => t.name === "Laporan Santri (Terbukti)" && Number(t.points) === pts);
   if(!type){
-    type = { id: uid("vt"), name: "Laporan Santri (Terbukti)", points: 10, desc: "Pelanggaran yang berasal dari laporan santri (menu Laporan Santri) yang sudah ditandai Selesai." };
+    type = { id: uid("vt"), name: "Laporan Santri (Terbukti)", points: pts, desc: "Pelanggaran yang berasal dari laporan santri (menu Laporan Santri) yang sudah diproses/ditandai Selesai." };
     if(!db.violationTypes) db.violationTypes = [];
     db.violationTypes.push(type);
   }
   return type;
 }
 
+// Minta guru memasukkan berapa poin pelanggaran yang diberikan. Mengembalikan angka > 0,
+// atau null kalau dibatalkan/tidak valid (supaya pemanggil bisa membatalkan aksi).
+function promptViolationPoints(defaultValue){
+  const input = prompt("Berapa poin pelanggaran yang diberikan untuk laporan ini?", String(defaultValue || 10));
+  if(input === null) return null; // guru menekan Batal
+  const points = parseInt(input, 10);
+  if(!points || points <= 0){
+    toast("Poin tidak valid. Masukkan angka lebih dari 0.", "error");
+    return null;
+  }
+  return points;
+}
+
+// Buat/perbarui catatan pelanggaran (Riwayat Pelanggaran) dari sebuah laporan santri,
+// memakai poin yang sudah diisi guru. Aman dipanggil berulang: tidak akan dobel karena
+// ditandai lewat r.violationRecordId.
+function createRecordFromReport(fresh, r, points){
+  if(r.violationRecordId) return; // sudah pernah dibuat, jangan dobel
+  const type = ensurePeerReportViolationType(fresh, points);
+  const target = (fresh.students || []).find(s=>s.id===r.targetId);
+  if(!target) return;
+  const record = {
+    id: uid("vr"),
+    studentId: r.targetId,
+    typeId: type.id,
+    date: r.date || todayISO(),
+    time: r.time || nowHHMM(),
+    teacher: teacherName || "Guru",
+    note: r.description ? `Dari Laporan Santri: ${r.description}` : "Dari Laporan Santri",
+    sourceReportId: r.id,
+  };
+  if(!fresh.violationRecords) fresh.violationRecords = [];
+  fresh.violationRecords.push(record);
+  r.violationRecordId = record.id;
+}
+
+// "Tandai Diproses": guru wajib mengisi poin pelanggaran dulu. Status baru boleh maju ke
+// "diproses" (dan baru dari situ tombol "Tandai Selesai" akan muncul — tidak bisa langsung
+// klik Selesai dari status "baru").
 async function markReportStatus(id, status){
+  let points = null;
+  if(status === "diproses"){
+    points = promptViolationPoints(10);
+    if(points === null) return; // dibatalkan, jangan ubah status
+  }
   await saveDBFresh(fresh => {
     const r = (fresh.violationReports || []).find(x=>x.id===id);
     if(!r) return;
     r.status = status;
+    if(points !== null) r.points = points;
     // Saat ditandai "Selesai", otomatis masukkan juga ke Riwayat Pelanggaran (dan otomatis
     // ikut terhitung di grafik "Pelanggaran Santri" dashboard, karena grafik itu membaca dari
-    // violationRecords yang sama). Ditandai r.violationRecordId supaya tidak dobel kalau
-    // tombol "Tandai Selesai" ditekan lagi / data dirender ulang.
-    if(status === "selesai" && !r.violationRecordId){
-      const type = ensurePeerReportViolationType(fresh);
-      const target = (fresh.students || []).find(s=>s.id===r.targetId);
-      if(target){
-        const record = {
-          id: uid("vr"),
-          studentId: r.targetId,
-          typeId: type.id,
-          date: r.date || todayISO(),
-          time: r.time || nowHHMM(),
-          teacher: teacherName || "Guru",
-          note: r.description ? `Dari Laporan Santri: ${r.description}` : "Dari Laporan Santri",
-          sourceReportId: r.id,
-        };
-        if(!fresh.violationRecords) fresh.violationRecords = [];
-        fresh.violationRecords.push(record);
-        r.violationRecordId = record.id;
-      }
+    // violationRecords yang sama). Pakai poin yang sudah diisi guru saat "Tandai Diproses"
+    // / "Buat Catatan Pelanggaran" sebelumnya.
+    if(status === "selesai"){
+      createRecordFromReport(fresh, r, r.points || 10);
     }
   });
   toast("Status laporan diperbarui.");
   renderTeacherReports();
   renderTeacherLogViolationList();
+  renderDashboardCharts();
 }
 
+// Hapus laporan santri. Kalau laporan ini sudah pernah menghasilkan catatan pelanggaran
+// (di menu Catatan Pelanggaran / Riwayat Pelanggaran), catatan itu ikut terhapus otomatis —
+// supaya kedua menu selalu sinkron dan grafik dashboard ikut ter-update.
 async function deleteViolationReport(id){
-  if(!confirm("Hapus laporan ini secara permanen?")) return;
-  await saveDBFresh(fresh => {
-    fresh.violationReports = (fresh.violationReports || []).filter(x=>x.id!==id);
-  });
-  toast("Laporan dihapus.");
-  renderTeacherReports();
-}
-
-async function processViolationReport(id){
+  if(!confirm("Hapus laporan ini secara permanen? Catatan pelanggaran yang tertaut (jika ada) juga akan ikut terhapus.")) return;
   await saveDBFresh(fresh => {
     const r = (fresh.violationReports || []).find(x=>x.id===id);
-    if(r) r.status = "diproses";
+    if(r && r.violationRecordId){
+      fresh.violationRecords = (fresh.violationRecords || []).filter(x=>x.id!==r.violationRecordId);
+    }
+    fresh.violationReports = (fresh.violationReports || []).filter(x=>x.id!==id);
   });
-  const r = (DB.violationReports || []).find(x=>x.id===id);
-  if(!r) return;
-  pendingLogReportId = id;
-  teacherGo("log-violation");
-  selectStudent(r.targetId);
-  const noteEl = document.getElementById("log-note");
-  if(noteEl){ noteEl.value = r.description; autoGrow(noteEl); }
-  toast("Nama siswa & keterangan sudah diisi. Lengkapi jenis pelanggaran lalu klik + Catat.");
+  toast("Laporan (dan catatan pelanggaran tertautnya) dihapus.");
+  renderTeacherReports();
+  renderTeacherLogViolationList();
+  renderDashboardCharts();
+}
+
+// "Buat Catatan Pelanggaran": guru wajib mengisi poin pelanggaran, lalu catatan pelanggaran
+// langsung dibuat & laporan ditandai "diproses" (tombol "Tandai Selesai" baru muncul setelah ini).
+async function processViolationReport(id){
+  const points = promptViolationPoints(10);
+  if(points === null) return; // dibatalkan
+  await saveDBFresh(fresh => {
+    const r = (fresh.violationReports || []).find(x=>x.id===id);
+    if(!r) return;
+    r.status = "diproses";
+    r.points = points;
+    createRecordFromReport(fresh, r, points);
+  });
+  toast(`Catatan pelanggaran dibuat (${points} poin).`);
+  renderTeacherReports();
+  renderTeacherLogViolationList();
+  renderDashboardCharts();
 }
 
 /* Combobox "cari & pilih" untuk siswa di halaman Catat Pelanggaran */
@@ -6681,11 +6726,21 @@ async function logViolation(){
   renderTeacherLogViolation();
 }
 
+// Hapus catatan pelanggaran (Riwayat Pelanggaran). Kalau catatan ini berasal dari sebuah
+// Laporan Santri (lewat QR "Lapor Pelanggaran Teman"), laporan tsb ikut terhapus juga di
+// menu Laporan Santri — supaya kedua menu selalu sinkron dan grafik dashboard ikut ter-update.
 async function deleteViolationRecord(id){
-  DB.violationRecords = DB.violationRecords.filter(r=>r.id!==id);
-  await saveDB();
-  toast("Catatan dihapus.");
+  if(!confirm("Hapus catatan pelanggaran ini secara permanen? Laporan santri yang tertaut (jika ada) juga akan ikut terhapus.")) return;
+  await saveDBFresh(fresh => {
+    const record = (fresh.violationRecords || []).find(r=>r.id===id);
+    if(record){
+      fresh.violationReports = (fresh.violationReports || []).filter(rep => rep.violationRecordId !== id);
+    }
+    fresh.violationRecords = (fresh.violationRecords || []).filter(r=>r.id!==id);
+  });
+  toast("Catatan (dan laporan santri tertautnya) dihapus.");
   renderTeacherLogViolation();
+  renderDashboardCharts();
 }
 
 /* =========================================================

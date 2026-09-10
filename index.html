@@ -426,7 +426,22 @@ tailwind.config = {
 
     <label class="block text-sm font-medium mb-1">Bukti Foto/Video (opsional)</label>
     <p class="text-xs text-on-surface-variant mb-1">Bisa langsung ambil foto/video dari kamera, atau pilih dari galeri.</p>
-    <input id="report-media-input" type="file" accept="image/*,video/*" onchange="handleReportMediaChange(event)" class="w-full text-xs mb-2"/>
+    <div class="relative mb-2">
+      <button type="button" id="report-media-picker-btn" onclick="toggleReportMediaMenu()" class="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm text-left hover:bg-surface-container transition-colors">
+        <span id="report-media-picker-label" class="text-on-surface-variant truncate">Pilih foto/video...</span>
+        <span class="material-symbols-outlined text-on-surface-variant text-lg shrink-0">attach_file</span>
+      </button>
+      <div id="report-media-menu" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg overflow-hidden">
+        <button type="button" onclick="pickReportMedia('gallery')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors">
+          <span class="material-symbols-outlined text-on-surface-variant">photo_library</span> Upload dari Galeri
+        </button>
+        <button type="button" onclick="pickReportMedia('camera')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors border-t border-outline-variant">
+          <span class="material-symbols-outlined text-on-surface-variant">photo_camera</span> Ambil dengan Kamera
+        </button>
+      </div>
+      <input id="report-media-input-gallery" type="file" accept="image/*,video/*" onchange="handleReportMediaChange(event)" class="hidden"/>
+      <input id="report-media-input-camera" type="file" accept="image/*,video/*" capture="environment" onchange="handleReportMediaChange(event)" class="hidden"/>
+    </div>
     <div id="report-media-preview" class="hidden mb-4"></div>
 
     <button id="report-submit-btn" onclick="submitViolationReport()" class="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan</button>
@@ -6340,13 +6355,34 @@ document.addEventListener("click", function(e){
   });
 });
 
+function toggleReportMediaMenu(){
+  const menu = document.getElementById("report-media-menu");
+  if(menu) menu.classList.toggle("hidden");
+}
+
+function pickReportMedia(kind){
+  const menu = document.getElementById("report-media-menu");
+  if(menu) menu.classList.add("hidden");
+  const input = document.getElementById(kind === "camera" ? "report-media-input-camera" : "report-media-input-gallery");
+  if(input) input.click();
+}
+
+document.addEventListener("click", function(e){
+  const menu = document.getElementById("report-media-menu");
+  const btn = document.getElementById("report-media-picker-btn");
+  if(!menu || !btn || menu.classList.contains("hidden")) return;
+  if(!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) menu.classList.add("hidden");
+});
+
 function handleReportMediaChange(e){
   const input = e.target;
   const file = input.files && input.files[0];
   const preview = document.getElementById("report-media-preview");
+  const label = document.getElementById("report-media-picker-label");
   if(!file){
     __reportMediaDataUrl = null; __reportMediaType = null;
     preview.classList.add("hidden"); preview.innerHTML = "";
+    if(label){ label.textContent = "Pilih foto/video..."; label.classList.add("text-on-surface-variant"); }
     return;
   }
   const isVideo = file.type.startsWith("video/");
@@ -6356,8 +6392,10 @@ function handleReportMediaChange(e){
     input.value = "";
     __reportMediaDataUrl = null; __reportMediaType = null;
     preview.classList.add("hidden"); preview.innerHTML = "";
+    if(label){ label.textContent = "Pilih foto/video..."; label.classList.add("text-on-surface-variant"); }
     return;
   }
+  if(label){ label.textContent = file.name || (isVideo ? "Video dipilih" : "Foto dipilih"); label.classList.remove("text-on-surface-variant"); }
   if(isVideo){
     const reader = new FileReader();
     reader.onload = ev=>{
@@ -6420,7 +6458,10 @@ function resetViolationReportForm(){
   document.getElementById("report-target-id").value = "";
   const descEl = document.getElementById("report-description");
   descEl.value = ""; descEl.style.height = "auto";
-  document.getElementById("report-media-input").value = "";
+  document.getElementById("report-media-input-gallery").value = "";
+  document.getElementById("report-media-input-camera").value = "";
+  const mediaLabel = document.getElementById("report-media-picker-label");
+  if(mediaLabel){ mediaLabel.textContent = "Pilih foto/video..."; mediaLabel.classList.add("text-on-surface-variant"); }
   document.getElementById("report-media-preview").innerHTML = "";
   document.getElementById("report-media-preview").classList.add("hidden");
   __reportMediaDataUrl = null; __reportMediaType = null;

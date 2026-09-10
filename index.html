@@ -3042,7 +3042,7 @@ function seedData(){
   const izinRequests = [];
   const infaq = [];
   const violationReports = [];
-  const settings = { parentToken: genToken() };
+  const settings = { parentToken: genToken(), reportToken: genToken() };
   const classList = ["X", "XI", "XII"];
   const izinSuratCounter = 0;
   return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, infaq, violationReports, settings, classList, izinSuratCounter };
@@ -3083,6 +3083,7 @@ async function loadDB(){
       if (!DB.violationReports) DB.violationReports = [];
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
+      if (!DB.settings.reportToken) DB.settings.reportToken = genToken();
       let needSave = false;
       if (!DB.classList) {
         // Migrasi data lama: bentuk daftar kelas dari nilai "kelas" yang sudah
@@ -3109,6 +3110,27 @@ async function saveDB(){
     });
   } catch(e) {
     console.error("Gagal menyimpan data:", e);
+    toast("Gagal menyimpan data. Coba lagi.", "error");
+  }
+}
+
+// Sebelum menulis, ambil dulu data TERBARU langsung dari server (bukan salinan lokal `DB`
+// yang bisa saja sudah usang, misalnya karena tab ini sempat lama tidak aktif). Perubahan
+// diterapkan di atas data terbaru itu, baru disimpan. Ini mencegah aksi seperti "hapus laporan"
+// tertimpa balik oleh sesi lain yang menyimpan memakai data lama (bug: data terhapus muncul lagi
+// setelah refresh). Dipakai khusus untuk aksi yang rawan tabrakan antar perangkat/tab.
+async function saveDBFresh(mutator){
+  try {
+    const snap = await window.fb.get(window.fb.ref(window.fb.db, "edusyncData"));
+    let fresh = DB;
+    if (snap.exists() && snap.val().json) {
+      try { fresh = JSON.parse(snap.val().json); } catch(e) { fresh = DB; }
+    }
+    mutator(fresh);
+    DB = fresh;
+    await saveDB();
+  } catch(e) {
+    console.error("Gagal menyimpan data (fresh):", e);
     toast("Gagal menyimpan data. Coba lagi.", "error");
   }
 }
@@ -4015,7 +4037,7 @@ function parentBarcodeUrl(){
 }
 
 function reportViolationUrl(){
-  return `${baseAppUrl()}#report`;
+  return `${baseAppUrl()}#report=${DB.settings.reportToken}`;
 }
 
 function renderQrInto(containerEl, text){
@@ -4043,10 +4065,10 @@ function closeQRModal(){
   document.getElementById("qr-modal").classList.remove("flex");
 }
 
-function downloadQRModal(){
-  const svg = document.querySelector("#qr-modal-canvas svg");
+// Dipakai bersama oleh modal QR maupun kartu "Barcode Akses" di Menu Kontrol,
+// supaya logika unduh PNG tidak diduplikasi.
+function downloadSvgAsPng(svg, filename){
   if(!svg) return;
-  const filename = document.getElementById("qr-modal").dataset.filename || "barcode";
   const svgData = new XMLSerializer().serializeToString(svg);
   const img = new Image();
   const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
@@ -4062,11 +4084,17 @@ function downloadQRModal(){
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     URL.revokeObjectURL(url);
     const a = document.createElement("a");
-    a.download = `${filename}.png`;
+    a.download = `${filename || "barcode"}.png`;
     a.href = canvas.toDataURL("image/png");
     a.click();
   };
   img.src = url;
+}
+
+function downloadQRModal(){
+  const svg = document.querySelector("#qr-modal-canvas svg");
+  const filename = document.getElementById("qr-modal").dataset.filename || "barcode";
+  downloadSvgAsPng(svg, filename);
 }
 
 function studentInitials(name){
@@ -4274,27 +4302,23 @@ function renderTeacherControl(){
     </div>
 
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl">
-      <h4 class="font-display font-bold mb-1">Barcode Portal Orang Tua</h4>
-      <p class="text-xs text-on-surface-variant mb-4">Barcode ini adalah gerbang masuk ke Portal Orang Tua. Cetak/bagikan ke wali santri. Jika barcode disalahgunakan atau bocor, klik "Ganti Barcode" — barcode lama otomatis tidak berlaku lagi.</p>
+      <h4 class="font-display font-bold mb-1">Barcode Akses</h4>
+      <p class="text-xs text-on-surface-variant mb-4">Pilih jenis barcode di bawah untuk melihat, mengunduh, atau menggantinya.</p>
+      <div class="mb-4">
+        <label class="block text-xs font-semibold text-on-surface-variant mb-1">Jenis Barcode</label>
+        <select id="control-barcode-type" onchange="renderControlBarcode()" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none bg-white">
+          <option value="parent">Barcode Orang Tua</option>
+          <option value="report">Laporan Pelanggaran</option>
+        </select>
+      </div>
+      <p id="control-barcode-desc" class="text-xs text-on-surface-variant mb-4"></p>
       <div class="flex flex-col items-center gap-3 bg-surface-container-low rounded-xl p-6 border border-outline-variant">
-        <div id="control-parent-qr"></div>
-        <p class="text-[11px] text-on-surface-variant break-all text-center" id="control-parent-url"></p>
+        <div id="control-barcode-qr"></div>
+        <p class="text-[11px] text-on-surface-variant break-all text-center" id="control-barcode-url"></p>
       </div>
       <div class="flex flex-col sm:flex-row gap-3 mt-4">
-        <button onclick="showParentBarcode()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all">Lihat / Unduh Barcode</button>
-        <button onclick="regenerateParentToken()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">🔄 Ganti Barcode</button>
-      </div>
-    </div>
-
-    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl mt-6">
-      <h4 class="font-display font-bold mb-1">QR Lapor Pelanggaran Teman</h4>
-      <p class="text-xs text-on-surface-variant mb-4">Tempel/bagikan QR ini ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia — identitas pelapor hanya terlihat oleh guru/admin di menu "Laporan Teman".</p>
-      <div class="flex flex-col items-center gap-3 bg-surface-container-low rounded-xl p-6 border border-outline-variant">
-        <div id="control-report-qr"></div>
-        <p class="text-[11px] text-on-surface-variant break-all text-center" id="control-report-url"></p>
-      </div>
-      <div class="flex flex-col sm:flex-row gap-3 mt-4">
-        <button onclick="showReportBarcode()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all">Lihat / Unduh QR</button>
+        <button onclick="downloadControlBarcode()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all">Unduh PNG</button>
+        <button onclick="regenerateControlBarcode()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">🔄 Ganti Barcode</button>
       </div>
     </div>
 
@@ -4316,11 +4340,56 @@ function renderTeacherControl(){
       </div>
     </div>
   `;
-  renderQrInto(document.getElementById("control-parent-qr"), parentBarcodeUrl());
-  document.getElementById("control-parent-url").textContent = parentBarcodeUrl();
-  renderQrInto(document.getElementById("control-report-qr"), reportViolationUrl());
-  document.getElementById("control-report-url").textContent = reportViolationUrl();
+  const typeSel = document.getElementById("control-barcode-type");
+  if(typeSel) typeSel.value = controlBarcodeType;
+  renderControlBarcode();
   renderTeacherAccountsTable();
+}
+
+// Konfigurasi tiap jenis barcode yang bisa dipilih di kartu "Barcode Akses".
+const CONTROL_BARCODE_CONFIGS = {
+  parent: {
+    desc: "Barcode ini adalah gerbang masuk ke Portal Orang Tua. Cetak/bagikan ke wali santri. Jika barcode disalahgunakan atau bocor, klik \"Ganti Barcode\" — barcode lama otomatis tidak berlaku lagi.",
+    url: () => parentBarcodeUrl(),
+    filename: "barcode-orang-tua",
+    confirmMsg: "Ganti Barcode Orang Tua? Barcode lama yang sudah dibagikan akan langsung tidak berlaku.",
+    successMsg: "Barcode Orang Tua berhasil diganti.",
+  },
+  report: {
+    desc: "Tempel/bagikan barcode ini ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia — identitas pelapor hanya terlihat oleh guru/admin di menu \"Laporan Teman\".",
+    url: () => reportViolationUrl(),
+    filename: "barcode-laporan-pelanggaran",
+    confirmMsg: "Ganti Barcode Laporan Pelanggaran? Barcode lama yang sudah dibagikan akan langsung tidak berlaku.",
+    successMsg: "Barcode Laporan Pelanggaran berhasil diganti.",
+  },
+};
+
+// Diingat lintas render supaya pilihan dropdown tidak balik ke "Barcode Orang Tua"
+// tiap kali halaman Menu Kontrol digambar ulang (mis. saat data tersinkron real-time).
+let controlBarcodeType = "parent";
+
+function renderControlBarcode(){
+  const sel = document.getElementById("control-barcode-type");
+  if(sel) controlBarcodeType = sel.value;
+  const cfg = CONTROL_BARCODE_CONFIGS[controlBarcodeType];
+  const url = cfg.url();
+  const qrEl = document.getElementById("control-barcode-qr");
+  if(qrEl) renderQrInto(qrEl, url);
+  const urlEl = document.getElementById("control-barcode-url");
+  if(urlEl) urlEl.textContent = url;
+  const descEl = document.getElementById("control-barcode-desc");
+  if(descEl) descEl.textContent = cfg.desc;
+}
+
+function downloadControlBarcode(){
+  const svg = document.querySelector("#control-barcode-qr svg");
+  const cfg = CONTROL_BARCODE_CONFIGS[controlBarcodeType];
+  downloadSvgAsPng(svg, cfg.filename);
+}
+
+async function regenerateControlBarcode(){
+  if(controlBarcodeType === "report") await regenerateReportToken();
+  else await regenerateParentToken();
 }
 
 function escapeHtml(str){
@@ -4401,11 +4470,25 @@ async function deleteTeacherAccount(slug){
 }
 
 async function regenerateParentToken(){
-  if(!confirm("Ganti barcode Orang Tua? Barcode lama yang sudah dibagikan akan langsung tidak berlaku.")) return;
-  DB.settings.parentToken = genToken();
-  await saveDB();
-  toast("Barcode Orang Tua berhasil diganti.");
-  renderTeacherControl();
+  const cfg = CONTROL_BARCODE_CONFIGS.parent;
+  if(!confirm(cfg.confirmMsg)) return;
+  await saveDBFresh(fresh => {
+    if(!fresh.settings) fresh.settings = {};
+    fresh.settings.parentToken = genToken();
+  });
+  toast(cfg.successMsg);
+  renderControlBarcode();
+}
+
+async function regenerateReportToken(){
+  const cfg = CONTROL_BARCODE_CONFIGS.report;
+  if(!confirm(cfg.confirmMsg)) return;
+  await saveDBFresh(fresh => {
+    if(!fresh.settings) fresh.settings = {};
+    fresh.settings.reportToken = genToken();
+  });
+  toast(cfg.successMsg);
+  renderControlBarcode();
 }
 
 /* =========================================================
@@ -6130,27 +6213,30 @@ function renderTeacherReports(){
 }
 
 async function markReportStatus(id, status){
-  const r = (DB.violationReports || []).find(x=>x.id===id);
-  if(!r) return;
-  r.status = status;
-  await saveDB();
+  await saveDBFresh(fresh => {
+    const r = (fresh.violationReports || []).find(x=>x.id===id);
+    if(r) r.status = status;
+  });
   toast("Status laporan diperbarui.");
   renderTeacherReports();
 }
 
 async function deleteViolationReport(id){
   if(!confirm("Hapus laporan ini secara permanen?")) return;
-  DB.violationReports = (DB.violationReports || []).filter(x=>x.id!==id);
-  await saveDB();
+  await saveDBFresh(fresh => {
+    fresh.violationReports = (fresh.violationReports || []).filter(x=>x.id!==id);
+  });
   toast("Laporan dihapus.");
   renderTeacherReports();
 }
 
 async function processViolationReport(id){
+  await saveDBFresh(fresh => {
+    const r = (fresh.violationReports || []).find(x=>x.id===id);
+    if(r) r.status = "diproses";
+  });
   const r = (DB.violationReports || []).find(x=>x.id===id);
   if(!r) return;
-  r.status = "diproses";
-  await saveDB();
   teacherGo("log-violation");
   selectStudent(r.targetId);
   const noteEl = document.getElementById("log-note");
@@ -6305,16 +6391,17 @@ async function submitViolationReport(){
   const btn = document.getElementById("report-submit-btn");
   btn.disabled = true; btn.textContent = "Mengirim...";
   try{
-    DB.violationReports = DB.violationReports || [];
-    DB.violationReports.push({
-      id: uid("rp"),
-      reporterId, targetId, description,
-      mediaDataUrl: __reportMediaDataUrl || null,
-      mediaType: __reportMediaType || null,
-      date: todayISO(), time: nowHHMM(),
-      status: "baru",
+    await saveDBFresh(fresh => {
+      fresh.violationReports = fresh.violationReports || [];
+      fresh.violationReports.push({
+        id: uid("rp"),
+        reporterId, targetId, description,
+        mediaDataUrl: __reportMediaDataUrl || null,
+        mediaType: __reportMediaType || null,
+        date: todayISO(), time: nowHHMM(),
+        status: "baru",
+      });
     });
-    await saveDB();
     toast("Laporan berhasil dikirim. Terima kasih sudah berani melapor.");
     resetViolationReportForm();
   } catch(e){
@@ -7490,7 +7577,15 @@ async function submitStudentIzin(){
    ========================================================= */
 function handleEntryToken(){
   const hash = window.location.hash || "";
+  const mReport = hash.match(/^#report=(.+)$/);
+  if(mReport){
+    const token = mReport[1];
+    if(!DB.settings || token !== DB.settings.reportToken){ goRole("barcode-invalid"); return true; }
+    goRole("report");
+    return true;
+  }
   if(hash === "#report"){
+    // Format lama tanpa token (barcode yang dicetak sebelum fitur "Ganti Barcode" ada).
     goRole("report");
     return true;
   }

@@ -21,36 +21,36 @@ tailwind.config = {
   theme: {
     extend: {
       colors: {
-        "primary": "#005da7",
-        "primary-container": "#2976c7",
+        "primary": "#0f6b3c",
+        "primary-container": "#2e9254",
         "on-primary": "#ffffff",
-        "on-primary-container": "#fdfcff",
-        "primary-fixed": "#d4e3ff",
-        "on-primary-fixed": "#001c39",
-        "secondary": "#006a62",
-        "secondary-container": "#70f8e8",
+        "on-primary-container": "#f4fbf5",
+        "primary-fixed": "#c6f0d2",
+        "on-primary-fixed": "#062910",
+        "secondary": "#2f6b1f",
+        "secondary-container": "#d7f0c2",
         "on-secondary": "#ffffff",
-        "on-secondary-container": "#007168",
-        "tertiary": "#864f00",
-        "tertiary-container": "#a86500",
-        "tertiary-fixed": "#ffdcbc",
-        "on-tertiary-fixed": "#2c1700",
+        "on-secondary-container": "#234a12",
+        "tertiary": "#5c6b12",
+        "tertiary-container": "#7c8a2a",
+        "tertiary-fixed": "#e7f0c2",
+        "on-tertiary-fixed": "#1c2400",
         "error": "#ba1a1a",
         "error-container": "#ffdad6",
         "on-error-container": "#93000a",
-        "surface": "#f7f9fb",
-        "background": "#f7f9fb",
+        "surface": "#f5faf6",
+        "background": "#f5faf6",
         "surface-container-lowest": "#ffffff",
-        "surface-container-low": "#f2f4f6",
-        "surface-container": "#eceef0",
-        "surface-container-high": "#e6e8ea",
-        "surface-variant": "#e0e3e5",
-        "surface-bright": "#f7f9fb",
-        "on-surface": "#191c1e",
-        "on-surface-variant": "#414751",
-        "outline": "#717783",
-        "outline-variant": "#c1c7d3",
-        "inverse-surface": "#2d3133",
+        "surface-container-low": "#eef6f0",
+        "surface-container": "#e6f1e9",
+        "surface-container-high": "#dcecdf",
+        "surface-variant": "#d9e5db",
+        "surface-bright": "#f5faf6",
+        "on-surface": "#151f17",
+        "on-surface-variant": "#3f4d42",
+        "outline": "#6c7d70",
+        "outline-variant": "#bfccc1",
+        "inverse-surface": "#26362a",
       },
       fontFamily: {
         display: ["Manrope", "sans-serif"],
@@ -77,6 +77,11 @@ tailwind.config = {
   /* Kotak isian teks (nama, keperluan, catatan, dll) melebar ke bawah saat teks panjang,
      bukan menggeser ke samping. */
   textarea.autogrow-input { resize: none; overflow: hidden; line-height: 1.4; font-family: inherit; box-sizing: border-box; min-height: 2.5rem; }
+  /* Pola geometris Islami berputar perlahan di sudut layar login */
+  .islamic-spin-slow { animation: islamicSpin 50s linear infinite; }
+  .islamic-spin-slow-reverse { animation: islamicSpinReverse 65s linear infinite; }
+  @keyframes islamicSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes islamicSpinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
 </style>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen">
@@ -365,15 +370,23 @@ tailwind.config = {
 
 <!-- ============ ROLE SELECT ============ -->
 <div id="screen-role" class="screen active min-h-screen w-full flex-col items-center justify-center px-6 py-10 relative overflow-hidden" style="background:radial-gradient(circle at 30% 20%, #0f4d2c 0%, #0a3620 45%, #072919 100%);">
-  <svg class="absolute top-0 left-0 w-48 h-48 opacity-[0.08] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="white" stroke-width="1.5">
-    <path d="M100 20 L120 60 L160 60 L130 90 L140 130 L100 105 L60 130 L70 90 L40 60 L80 60 Z"/>
-    <circle cx="100" cy="80" r="55"/>
-    <circle cx="100" cy="80" r="75"/>
+  <svg class="absolute -top-10 -left-10 w-56 h-56 opacity-[0.14] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#9FDCA8" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <rect x="55" y="55" width="90" height="90" transform="rotate(0 100 100)"/>
+      <rect x="55" y="55" width="90" height="90" transform="rotate(45 100 100)"/>
+      <circle cx="100" cy="100" r="30"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
   </svg>
-  <svg class="absolute bottom-0 right-0 w-56 h-56 opacity-[0.08] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="white" stroke-width="1.5">
-    <path d="M100 20 L120 60 L160 60 L130 90 L140 130 L100 105 L60 130 L70 90 L40 60 L80 60 Z"/>
-    <circle cx="100" cy="80" r="55"/>
-    <circle cx="100" cy="80" r="75"/>
+  <svg class="absolute -bottom-14 -right-14 w-64 h-64 opacity-[0.14] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#9FDCA8" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow-reverse" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <rect x="55" y="55" width="90" height="90" transform="rotate(0 100 100)"/>
+      <rect x="55" y="55" width="90" height="90" transform="rotate(45 100 100)"/>
+      <circle cx="100" cy="100" r="30"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
   </svg>
   <div class="w-full max-w-sm flex flex-col items-center text-center relative z-10">
     <div id="role-logo-wrap" class="flex items-center justify-center mb-2 mx-auto">
@@ -408,8 +421,20 @@ tailwind.config = {
 </div>
 
 <!-- ============ TEACHER LOGIN / REGISTER ============ -->
-<div id="screen-teacher-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low">
-  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in">
+<div id="screen-teacher-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
+  <svg class="absolute -top-10 -left-10 w-48 h-48 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <svg class="absolute -bottom-14 -right-14 w-60 h-60 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow-reverse" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
     <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-primary-fixed flex items-center justify-center text-primary mb-4">
       <span class="material-symbols-outlined">manage_accounts</span>
@@ -451,8 +476,20 @@ tailwind.config = {
 </div>
 
 <!-- ============ PARENT LOGIN ============ -->
-<div id="screen-parent-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low">
-  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in">
+<div id="screen-parent-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
+  <svg class="absolute -top-10 -left-10 w-48 h-48 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <svg class="absolute -bottom-14 -right-14 w-60 h-60 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow-reverse" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
     <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-tertiary-fixed flex items-center justify-center text-tertiary mb-4">
       <span class="material-symbols-outlined">family_restroom</span>
@@ -469,8 +506,20 @@ tailwind.config = {
 </div>
 
 <!-- ============ STUDENT LOGIN ============ -->
-<div id="screen-student-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low">
-  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in">
+<div id="screen-student-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
+  <svg class="absolute -top-10 -left-10 w-48 h-48 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <svg class="absolute -bottom-14 -right-14 w-60 h-60 opacity-[0.10] pointer-events-none" viewBox="0 0 200 200" fill="none" stroke="#0f6b3c" stroke-width="1.4" stroke-linejoin="round">
+    <g class="islamic-spin-slow-reverse" style="transform-origin:100px 100px;">
+      <path d="M100 18 L118 62 L164 46 L138 86 L182 100 L138 114 L164 154 L118 138 L100 182 L82 138 L36 154 L62 114 L18 100 L62 86 L36 46 L82 62 Z"/>
+      <circle cx="100" cy="100" r="94"/>
+    </g>
+  </svg>
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
     <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center text-secondary mb-4">
       <span class="material-symbols-outlined">backpack</span>
@@ -3569,11 +3618,11 @@ function renderDashboardCharts(){
   if(typeof Chart === "undefined") return;
   if(!window.__dashboardCharts) window.__dashboardCharts = {};
   const configs = [
-    { id:"chart-payment", series: dashboardPaymentSeries(), color:"#005da7", label:"Pembayaran" },
-    { id:"chart-expense", series: dashboardExpenseSeries(), color:"#ba1a1a", label:"Uang Keluar" },
-    { id:"chart-cash", series: dashboardCashSeries(), color:"#006a62", label:"Uang Kas" },
-    { id:"chart-violation", series: dashboardViolationSeries(), color:"#a86500", label:"Pelanggaran" },
-    { id:"chart-izinvisit", series: dashboardIzinVisitSeries(), color:"#2976c7", label:"Izin & Jenguk" },
+    { id:"chart-payment", series: dashboardPaymentSeries(), color:"#0f6b3c", label:"Pembayaran" },
+    { id:"chart-expense", series: dashboardExpenseSeries(), color:"#5c6b12", label:"Uang Keluar" },
+    { id:"chart-cash", series: dashboardCashSeries(), color:"#2e9254", label:"Uang Kas" },
+    { id:"chart-violation", series: dashboardViolationSeries(), color:"#7c8a2a", label:"Pelanggaran" },
+    { id:"chart-izinvisit", series: dashboardIzinVisitSeries(), color:"#4d9e6a", label:"Izin & Jenguk" },
   ];
   configs.forEach(cfg=>{
     const canvas = document.getElementById(cfg.id);
@@ -4855,7 +4904,7 @@ const SURAT_IZIN_CSS = `
   .surat-izin-sheet .kop img{ width: 74px; height: 74px; object-fit: contain; flex-shrink:0; }
   .surat-izin-sheet .kop img.logo-muhammadiyah{ width: 86px; height: 86px; }
   .surat-izin-sheet .kop .sekolah-nama-1{ font-size: 15px; font-weight: bold; letter-spacing: 0.5px; margin: 0; text-align:center; color:#111; }
-  .surat-izin-sheet .kop .sekolah-nama-2{ font-size: 17px; font-weight: bold; letter-spacing: 0.5px; margin: 1px 0 0; text-align:center; color:#1F3864; }
+  .surat-izin-sheet .kop .sekolah-nama-2{ font-size: 17px; font-weight: bold; letter-spacing: 0.5px; margin: 1px 0 0; text-align:center; color:#0f4d2c; }
   .surat-izin-sheet .kop .sekolah-alamat{ font-size: 11px; margin: 3px 0 0; text-align:center; }
   .surat-izin-sheet .kop-garis-bawah{ border-bottom: 1px solid #111; margin-bottom: 20px; }
   .surat-izin-sheet h1.judul{ text-align:center; font-size: 15px; font-weight: bold; text-decoration: underline; letter-spacing: 0.5px; margin: 6px 0 20px; }

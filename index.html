@@ -397,6 +397,43 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ LAPOR PELANGGARAN TEMAN (akses publik via QR) ============ -->
+<div id="screen-report-violation" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10 bg-surface-container-low">
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-6 w-full max-w-md fade-in">
+    <div class="w-12 h-12 rounded-xl bg-error-container flex items-center justify-center text-on-error-container mb-4">
+      <span class="material-symbols-outlined">campaign</span>
+    </div>
+    <h2 class="font-display text-xl font-bold mb-1">Laporkan Pelanggaran Teman</h2>
+    <p class="text-sm text-on-surface-variant mb-5">Identitasmu sebagai pelapor dirahasiakan — hanya terlihat oleh guru/admin. Isi laporan dengan jujur dan jelas.</p>
+
+    <label class="block text-sm font-medium mb-1">Nama Kamu (Pelapor)</label>
+    <p class="text-xs text-on-surface-variant mb-1">Untuk memastikan pelapor adalah santri terdaftar. Tidak akan diberitahukan ke siapa pun, termasuk yang dilaporkan.</p>
+    <div class="relative mb-4">
+      <input id="report-reporter-search" type="text" autocomplete="off" placeholder="Ketik nama kamu..." onfocus="openReportReporterDropdown()" oninput="filterReportReporterDropdown()" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      <input type="hidden" id="report-reporter-id" value=""/>
+      <div id="report-reporter-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg max-h-48 overflow-y-auto custom-scrollbar"></div>
+    </div>
+
+    <label class="block text-sm font-medium mb-1">Nama Teman yang Dilaporkan</label>
+    <div class="relative mb-4">
+      <input id="report-target-search" type="text" autocomplete="off" placeholder="Ketik nama teman..." onfocus="openReportTargetDropdown()" oninput="filterReportTargetDropdown()" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      <input type="hidden" id="report-target-id" value=""/>
+      <div id="report-target-dropdown" class="hidden absolute left-0 right-0 top-full mt-1 z-30 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg max-h-48 overflow-y-auto custom-scrollbar"></div>
+    </div>
+
+    <label class="block text-sm font-medium mb-1">Keterangan Pelanggaran</label>
+    <textarea id="report-description" rows="3" placeholder="Jelaskan pelanggaran apa yang dilakukan, kapan, dan di mana..." class="autogrow-input w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-4" oninput="autoGrow(this)"></textarea>
+
+    <label class="block text-sm font-medium mb-1">Bukti Foto/Video (opsional)</label>
+    <p class="text-xs text-on-surface-variant mb-1">Bisa langsung ambil foto/video dari kamera, atau pilih dari galeri.</p>
+    <input id="report-media-input" type="file" accept="image/*,video/*" onchange="handleReportMediaChange(event)" class="w-full text-xs mb-2"/>
+    <div id="report-media-preview" class="hidden mb-4"></div>
+
+    <button id="report-submit-btn" onclick="submitViolationReport()" class="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan</button>
+    <p id="report-error" class="hidden text-error text-xs mt-2"></p>
+  </div>
+</div>
+
 <!-- ============ TEACHER LOGIN / REGISTER ============ -->
 <div id="screen-teacher-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
@@ -3004,10 +3041,11 @@ function seedData(){
   const visits = [];
   const izinRequests = [];
   const infaq = [];
+  const violationReports = [];
   const settings = { parentToken: genToken() };
   const classList = ["X", "XI", "XII"];
   const izinSuratCounter = 0;
-  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, infaq, settings, classList, izinSuratCounter };
+  return { students, violationTypes, violationRecords, payments, expenses, visits, izinRequests, infaq, violationReports, settings, classList, izinSuratCounter };
 }
 
 function genToken(){
@@ -3042,6 +3080,7 @@ async function loadDB(){
       if (!DB.izinRequests) DB.izinRequests = [];
       if (!DB.izinSuratCounter) DB.izinSuratCounter = 0;
       if (!DB.infaq) DB.infaq = [];
+      if (!DB.violationReports) DB.violationReports = [];
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
       let needSave = false;
@@ -3165,6 +3204,7 @@ function goRole(role){
     "parent-app": "screen-parent",
     "student-app": "screen-student",
     "barcode-invalid": "screen-barcode-invalid",
+    "report": "screen-report-violation",
   };
   document.getElementById(map[role]).classList.add("active");
   if (role === "role") { currentStudent = null; }
@@ -3974,6 +4014,10 @@ function parentBarcodeUrl(){
   return `${baseAppUrl()}#p=${DB.settings.parentToken}`;
 }
 
+function reportViolationUrl(){
+  return `${baseAppUrl()}#report`;
+}
+
 function renderQrInto(containerEl, text){
   containerEl.innerHTML = "";
   const qr = qrcode(0, "M");
@@ -4205,6 +4249,15 @@ function showParentBarcode(){
   });
 }
 
+function showReportBarcode(){
+  openQRModal({
+    title: "QR Lapor Pelanggaran Teman",
+    subtitle: "Tempel/bagikan ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia.",
+    url: reportViolationUrl(),
+    filename: "qr-lapor-pelanggaran-teman",
+  });
+}
+
 /* =========================================================
    TEACHER: Menu Kontrol (kelola barcode Orang Tua)
    ========================================================= */
@@ -4233,6 +4286,18 @@ function renderTeacherControl(){
       </div>
     </div>
 
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl mt-6">
+      <h4 class="font-display font-bold mb-1">QR Lapor Pelanggaran Teman</h4>
+      <p class="text-xs text-on-surface-variant mb-4">Tempel/bagikan QR ini ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia — identitas pelapor hanya terlihat oleh guru/admin di menu "Laporan Teman".</p>
+      <div class="flex flex-col items-center gap-3 bg-surface-container-low rounded-xl p-6 border border-outline-variant">
+        <div id="control-report-qr"></div>
+        <p class="text-[11px] text-on-surface-variant break-all text-center" id="control-report-url"></p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-3 mt-4">
+        <button onclick="showReportBarcode()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all">Lihat / Unduh QR</button>
+      </div>
+    </div>
+
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-3xl mt-6">
       <h4 class="font-display font-bold mb-1">Akun Guru Terdaftar</h4>
       <p class="font-arabic text-l leading-loose text-right mb-2" dir="rtl" lang="ar">مَا مِنْ عَبْدٍ يَسْتَرْعِيْهِ اللَّهُ رَعِيَّةً، يَمُوْتُ يَوْمَ يَمُوْتُ، وَهُوَ غَاشٌّ لِرَعِيَّتِهِ، إِلاَّ حَرَّمَ اللَّهُ عَلَيْهِ الْجَنَّةَ</p>
@@ -4253,6 +4318,8 @@ function renderTeacherControl(){
   `;
   renderQrInto(document.getElementById("control-parent-qr"), parentBarcodeUrl());
   document.getElementById("control-parent-url").textContent = parentBarcodeUrl();
+  renderQrInto(document.getElementById("control-report-qr"), reportViolationUrl());
+  document.getElementById("control-report-url").textContent = reportViolationUrl();
   renderTeacherAccountsTable();
 }
 
@@ -6008,6 +6075,89 @@ function renderTeacherLogViolationList(){
   }).join("") || `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada riwayat.</p>`;
 }
 
+/* =========================================================
+   TEACHER: Laporan Teman (masuk dari QR "Lapor Pelanggaran Teman")
+   ========================================================= */
+function reportStatusBadge(status){
+  const map = {
+    baru: ["bg-error-container", "text-on-error-container", "Baru"],
+    diproses: ["bg-tertiary-container", "text-on-tertiary-container", "Diproses"],
+    selesai: ["bg-primary-fixed", "text-primary", "Selesai"],
+  };
+  const [bg, fg, label] = map[status] || map.baru;
+  return `<span class="shrink-0 px-2 py-0.5 rounded-full text-xs font-semibold ${bg} ${fg}">${label}</span>`;
+}
+
+function renderTeacherReports(){
+  const el = document.getElementById("teacher-content");
+  const list = [...(DB.violationReports || [])].sort((a,b)=>
+    new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
+  );
+  el.innerHTML = `
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4 mb-4">
+      <p class="text-xs text-on-surface-variant">Laporan yang masuk lewat QR "Lapor Pelanggaran Teman". Nama pelapor hanya ditampilkan di sini untuk guru/admin — mohon jaga kerahasiaannya supaya santri tetap berani melapor.</p>
+    </div>
+    <div class="space-y-3">
+      ${list.map(r=>{
+        const target = studentById(r.targetId);
+        const reporter = studentById(r.reporterId);
+        const media = r.mediaDataUrl
+          ? (r.mediaType === "video"
+            ? `<video src="${r.mediaDataUrl}" controls class="w-full max-w-xs rounded-lg mt-3"></video>`
+            : `<img src="${r.mediaDataUrl}" class="w-full max-w-xs rounded-lg mt-3 object-contain"/>`)
+          : "";
+        return `
+        <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4">
+          <div class="flex items-start justify-between gap-2">
+            <div>
+              <p class="font-semibold text-sm">Terlapor: ${escapeHtml(target ? target.name : "(siswa tidak ditemukan)")}${target && target.kelas ? ` <span class="text-on-surface-variant font-normal">(${escapeHtml(target.kelas)})</span>` : ""}</p>
+              <p class="text-xs text-on-surface-variant mt-0.5">Pelapor: ${escapeHtml(reporter ? reporter.name : "(tidak diketahui)")} • ${formatDateTimeFull(r.date, r.time)}</p>
+            </div>
+            ${reportStatusBadge(r.status)}
+          </div>
+          <p class="text-sm mt-3 whitespace-pre-wrap">${escapeHtml(r.description)}</p>
+          ${media}
+          <div class="flex flex-wrap gap-2 mt-3">
+            ${r.status !== "selesai" ? `<button onclick="processViolationReport('${r.id}')" class="bg-primary text-on-primary rounded-lg text-xs font-semibold py-2 px-3 hover:shadow-md transition-all">Buat Catatan Pelanggaran</button>` : ""}
+            ${r.status === "baru" ? `<button onclick="markReportStatus('${r.id}','diproses')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Diproses</button>` : ""}
+            ${r.status !== "selesai" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Selesai</button>` : ""}
+            <button onclick="deleteViolationReport('${r.id}')" class="text-error hover:underline text-xs font-semibold ml-auto">Hapus</button>
+          </div>
+        </div>`;
+      }).join("") || `<p class="p-6 text-center text-on-surface-variant text-sm bg-surface-container-lowest rounded-xl border border-outline-variant">Belum ada laporan masuk.</p>`}
+    </div>
+  `;
+}
+
+async function markReportStatus(id, status){
+  const r = (DB.violationReports || []).find(x=>x.id===id);
+  if(!r) return;
+  r.status = status;
+  await saveDB();
+  toast("Status laporan diperbarui.");
+  renderTeacherReports();
+}
+
+async function deleteViolationReport(id){
+  if(!confirm("Hapus laporan ini secara permanen?")) return;
+  DB.violationReports = (DB.violationReports || []).filter(x=>x.id!==id);
+  await saveDB();
+  toast("Laporan dihapus.");
+  renderTeacherReports();
+}
+
+async function processViolationReport(id){
+  const r = (DB.violationReports || []).find(x=>x.id===id);
+  if(!r) return;
+  r.status = "diproses";
+  await saveDB();
+  teacherGo("log-violation");
+  selectStudent(r.targetId);
+  const noteEl = document.getElementById("log-note");
+  if(noteEl){ noteEl.value = r.description; autoGrow(noteEl); }
+  toast("Nama siswa & keterangan sudah diisi. Lengkapi jenis pelanggaran lalu klik + Catat.");
+}
+
 /* Combobox "cari & pilih" untuk siswa di halaman Catat Pelanggaran */
 function studentDropdownItems(query){
   const q = (query||"").trim().toLowerCase();
@@ -6057,6 +6207,137 @@ document.addEventListener("click", function(e){
   if(!dd || !search || dd.classList.contains("hidden")) return;
   if(!dd.contains(e.target) && e.target !== search) dd.classList.add("hidden");
 });
+
+/* =========================================================
+   LAPOR PELANGGARAN TEMAN (akses publik via QR, tanpa login)
+   ========================================================= */
+let __reportMediaDataUrl = null;
+let __reportMediaType = null; // 'image' | 'video'
+
+function renderReportStudentDropdown(kind, query){
+  const dd = document.getElementById(`report-${kind}-dropdown`);
+  if(!dd) return;
+  const items = studentDropdownItems(query);
+  dd.innerHTML = items.length ? items.map(s=>`
+    <button type="button" onclick="selectReportStudent('${kind}','${s.id}')" class="w-full text-left px-3 py-2 text-sm hover:bg-surface-container transition-colors">${escapeHtml(s.name)}${s.kelas?` <span class="text-on-surface-variant">(${escapeHtml(s.kelas)})</span>`:""}</button>
+  `).join("") : `<p class="px-3 py-2 text-sm text-on-surface-variant">Tidak ditemukan.</p>`;
+}
+
+function openReportReporterDropdown(){
+  renderReportStudentDropdown("reporter", document.getElementById("report-reporter-search").value);
+  document.getElementById("report-reporter-dropdown").classList.remove("hidden");
+}
+function filterReportReporterDropdown(){
+  document.getElementById("report-reporter-id").value = "";
+  openReportReporterDropdown();
+}
+function openReportTargetDropdown(){
+  renderReportStudentDropdown("target", document.getElementById("report-target-search").value);
+  document.getElementById("report-target-dropdown").classList.remove("hidden");
+}
+function filterReportTargetDropdown(){
+  document.getElementById("report-target-id").value = "";
+  openReportTargetDropdown();
+}
+function selectReportStudent(kind, studentId){
+  const s = studentById(studentId);
+  document.getElementById(`report-${kind}-id`).value = studentId;
+  document.getElementById(`report-${kind}-search`).value = s ? s.name : "";
+  document.getElementById(`report-${kind}-dropdown`).classList.add("hidden");
+}
+document.addEventListener("click", function(e){
+  ["reporter","target"].forEach(kind=>{
+    const dd = document.getElementById(`report-${kind}-dropdown`);
+    const search = document.getElementById(`report-${kind}-search`);
+    if(!dd || !search || dd.classList.contains("hidden")) return;
+    if(!dd.contains(e.target) && e.target !== search) dd.classList.add("hidden");
+  });
+});
+
+function handleReportMediaChange(e){
+  const input = e.target;
+  const file = input.files && input.files[0];
+  const preview = document.getElementById("report-media-preview");
+  if(!file){
+    __reportMediaDataUrl = null; __reportMediaType = null;
+    preview.classList.add("hidden"); preview.innerHTML = "";
+    return;
+  }
+  const isVideo = file.type.startsWith("video/");
+  const maxBytes = (isVideo ? 15 : 8) * 1024 * 1024;
+  if(file.size > maxBytes){
+    toast(`Ukuran file terlalu besar (maks ${isVideo ? 15 : 8}MB).`, "error");
+    input.value = "";
+    __reportMediaDataUrl = null; __reportMediaType = null;
+    preview.classList.add("hidden"); preview.innerHTML = "";
+    return;
+  }
+  if(isVideo){
+    const reader = new FileReader();
+    reader.onload = ev=>{
+      __reportMediaDataUrl = ev.target.result;
+      __reportMediaType = "video";
+      preview.innerHTML = `<video src="${__reportMediaDataUrl}" controls class="w-full rounded-lg max-h-56"></video>`;
+      preview.classList.remove("hidden");
+    };
+    reader.onerror = ()=> toast("Gagal memuat video.", "error");
+    reader.readAsDataURL(file);
+  } else {
+    resizeImageFile(file, 1000).then(dataUrl=>{
+      __reportMediaDataUrl = dataUrl;
+      __reportMediaType = "image";
+      preview.innerHTML = `<img src="${dataUrl}" class="w-full rounded-lg max-h-56 object-contain"/>`;
+      preview.classList.remove("hidden");
+    }).catch(()=> toast("Gagal memuat gambar.", "error"));
+  }
+}
+
+async function submitViolationReport(){
+  const reporterId = document.getElementById("report-reporter-id").value;
+  const targetId = document.getElementById("report-target-id").value;
+  const description = document.getElementById("report-description").value.trim();
+  const errEl = document.getElementById("report-error");
+  errEl.classList.add("hidden");
+  if(!reporterId){ errEl.textContent = "Pilih namamu dari daftar santri terdaftar."; errEl.classList.remove("hidden"); return; }
+  if(!targetId){ errEl.textContent = "Pilih nama teman yang dilaporkan."; errEl.classList.remove("hidden"); return; }
+  if(reporterId === targetId){ errEl.textContent = "Tidak bisa melaporkan diri sendiri."; errEl.classList.remove("hidden"); return; }
+  if(!description){ errEl.textContent = "Isi keterangan pelanggaran."; errEl.classList.remove("hidden"); return; }
+  const btn = document.getElementById("report-submit-btn");
+  btn.disabled = true; btn.textContent = "Mengirim...";
+  try{
+    DB.violationReports = DB.violationReports || [];
+    DB.violationReports.push({
+      id: uid("rp"),
+      reporterId, targetId, description,
+      mediaDataUrl: __reportMediaDataUrl || null,
+      mediaType: __reportMediaType || null,
+      date: todayISO(), time: nowHHMM(),
+      status: "baru",
+    });
+    await saveDB();
+    toast("Laporan berhasil dikirim. Terima kasih sudah berani melapor.");
+    resetViolationReportForm();
+  } catch(e){
+    console.error(e);
+    errEl.textContent = "Gagal mengirim laporan. Coba lagi.";
+    errEl.classList.remove("hidden");
+  } finally {
+    btn.disabled = false; btn.textContent = "Kirim Laporan";
+  }
+}
+
+function resetViolationReportForm(){
+  document.getElementById("report-reporter-search").value = "";
+  document.getElementById("report-reporter-id").value = "";
+  document.getElementById("report-target-search").value = "";
+  document.getElementById("report-target-id").value = "";
+  const descEl = document.getElementById("report-description");
+  descEl.value = ""; descEl.style.height = "auto";
+  document.getElementById("report-media-input").value = "";
+  document.getElementById("report-media-preview").innerHTML = "";
+  document.getElementById("report-media-preview").classList.add("hidden");
+  __reportMediaDataUrl = null; __reportMediaType = null;
+}
 
 /* Combobox "cari & pilih" untuk jenis pelanggaran di halaman Catat Pelanggaran */
 function violationTypeDropdownItems(query){
@@ -6584,6 +6865,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "expenses", icon: "trending_down", label: "Uang Keluar" },
   { id: "violation-types", icon: "rule", label: "Jenis Pelanggaran" },
   { id: "log-violation", icon: "report_problem", label: "Catat Pelanggaran" },
+  { id: "reports", icon: "flag", label: "Laporan Teman" },
   { id: "visits", icon: "calendar_month", label: "Jadwal Kunjungan" },
   { id: "izin", icon: "assignment_turned_in", label: "Perizinan Santri" },
   { id: "laporan", icon: "summarize", label: "Laporan" },
@@ -6599,6 +6881,7 @@ const TEACHER_RENDERERS = {
   expenses: () => renderTeacherExpenses(),
   "violation-types": () => renderTeacherViolationTypes(),
   "log-violation": () => renderTeacherLogViolation(),
+  reports: () => renderTeacherReports(),
   visits: () => renderTeacherVisits(),
   izin: () => renderTeacherIzin(),
   laporan: () => renderTeacherLaporan(),
@@ -6656,7 +6939,7 @@ function teacherGo(page){
   currentTeacherPage = page;
   setActiveNav(page);
   closeTeacherMobileNav();
-  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
+  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Teman", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
   document.getElementById("teacher-page-title").textContent = titles[page];
   TEACHER_RENDERERS[page]();
 }
@@ -7207,6 +7490,10 @@ async function submitStudentIzin(){
    ========================================================= */
 function handleEntryToken(){
   const hash = window.location.hash || "";
+  if(hash === "#report"){
+    goRole("report");
+    return true;
+  }
   const m = hash.match(/^#([sp])=(.+)$/);
   if(!m) return false; // tidak ada token → tampilkan halaman peran (Guru/Admin) seperti biasa
 

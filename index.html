@@ -100,7 +100,7 @@ tailwind.config = {
   </div>
 </div>
 
-<!-- ============ MEDIA LIGHTBOX MODAL (perbesar bukti foto/video Laporan Teman) ============ -->
+<!-- ============ MEDIA LIGHTBOX MODAL (perbesar bukti foto/video Laporan Santri) ============ -->
 <div id="media-lightbox-modal" class="hidden fixed inset-0 bg-black/80 z-[999] items-center justify-center px-4" onclick="if(event.target===this) closeMediaLightbox()">
   <div class="relative max-w-2xl w-full">
     <button onclick="closeMediaLightbox()" class="absolute -top-11 right-0 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors">
@@ -3042,6 +3042,11 @@ const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 let teacherViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let studentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let parentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+// Saat guru klik "Buat Catatan Pelanggaran" pada sebuah Laporan Santri, id laporan itu disimpan
+// di sini sementara. Kalau guru lalu menekan "+ Catat", catatan pelanggaran yang dibuat akan
+// ditautkan ke laporan tsb (r.violationRecordId) supaya nanti tidak dobel tercatat saat laporan
+// ditandai "Selesai".
+let pendingLogReportId = null;
 
 function uid(prefix){ return prefix + "_" + Math.random().toString(36).slice(2,9); }
 
@@ -4384,7 +4389,7 @@ const CONTROL_BARCODE_CONFIGS = {
   },
   report: {
     title: "Barcode Laporan Pelanggaran",
-    desc: "Tempel/bagikan barcode ini ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia — identitas pelapor hanya terlihat oleh guru/admin di menu \"Laporan Teman\".",
+    desc: "Tempel/bagikan barcode ini ke santri. Siapa pun bisa melaporkan pelanggaran temannya secara rahasia — identitas pelapor hanya terlihat oleh guru/admin di menu \"Laporan Santri\".",
     url: () => reportViolationUrl(),
     filename: "barcode-laporan-pelanggaran",
     confirmMsg: "Ganti Barcode Laporan Pelanggaran? Barcode lama yang sudah dibagikan akan langsung tidak berlaku.",
@@ -6198,7 +6203,7 @@ function renderTeacherLogViolationList(){
 }
 
 /* =========================================================
-   TEACHER: Laporan Teman (masuk dari QR "Lapor Pelanggaran Teman")
+   TEACHER: Laporan Santri (masuk dari QR "Lapor Pelanggaran Teman")
    ========================================================= */
 function reportStatusBadge(status){
   const map = {
@@ -6297,13 +6302,50 @@ function renderTeacherReports(){
   `;
 }
 
+// Pastikan ada satu jenis pelanggaran khusus untuk laporan santri yang sudah "Selesai",
+// supaya laporan tsb bisa otomatis dicatat sebagai riwayat pelanggaran dengan poin yang jelas.
+function ensurePeerReportViolationType(db){
+  let type = (db.violationTypes || []).find(t => t.name === "Laporan Santri (Terbukti)");
+  if(!type){
+    type = { id: uid("vt"), name: "Laporan Santri (Terbukti)", points: 10, desc: "Pelanggaran yang berasal dari laporan santri (menu Laporan Santri) yang sudah ditandai Selesai." };
+    if(!db.violationTypes) db.violationTypes = [];
+    db.violationTypes.push(type);
+  }
+  return type;
+}
+
 async function markReportStatus(id, status){
   await saveDBFresh(fresh => {
     const r = (fresh.violationReports || []).find(x=>x.id===id);
-    if(r) r.status = status;
+    if(!r) return;
+    r.status = status;
+    // Saat ditandai "Selesai", otomatis masukkan juga ke Riwayat Pelanggaran (dan otomatis
+    // ikut terhitung di grafik "Pelanggaran Santri" dashboard, karena grafik itu membaca dari
+    // violationRecords yang sama). Ditandai r.violationRecordId supaya tidak dobel kalau
+    // tombol "Tandai Selesai" ditekan lagi / data dirender ulang.
+    if(status === "selesai" && !r.violationRecordId){
+      const type = ensurePeerReportViolationType(fresh);
+      const target = (fresh.students || []).find(s=>s.id===r.targetId);
+      if(target){
+        const record = {
+          id: uid("vr"),
+          studentId: r.targetId,
+          typeId: type.id,
+          date: r.date || todayISO(),
+          time: r.time || nowHHMM(),
+          teacher: teacherName || "Guru",
+          note: r.description ? `Dari Laporan Santri: ${r.description}` : "Dari Laporan Santri",
+          sourceReportId: r.id,
+        };
+        if(!fresh.violationRecords) fresh.violationRecords = [];
+        fresh.violationRecords.push(record);
+        r.violationRecordId = record.id;
+      }
+    }
   });
   toast("Status laporan diperbarui.");
   renderTeacherReports();
+  renderTeacherLogViolationList();
 }
 
 async function deleteViolationReport(id){
@@ -6322,6 +6364,7 @@ async function processViolationReport(id){
   });
   const r = (DB.violationReports || []).find(x=>x.id===id);
   if(!r) return;
+  pendingLogReportId = id;
   teacherGo("log-violation");
   selectStudent(r.targetId);
   const noteEl = document.getElementById("log-note");
@@ -6619,8 +6662,20 @@ async function logViolation(){
   const time = document.getElementById("log-time").value || nowHHMM();
   const note = document.getElementById("log-note").value.trim();
   if(!studentId || !typeId || !date){ toast("Lengkapi siswa, jenis pelanggaran, dan tanggal.", "error"); return; }
-  DB.violationRecords.push({ id: uid("vr"), studentId, typeId, date, time, teacher: teacherName||"Guru", note });
+  const newRecord = { id: uid("vr"), studentId, typeId, date, time, teacher: teacherName||"Guru", note };
+  if(pendingLogReportId) newRecord.sourceReportId = pendingLogReportId;
+  DB.violationRecords.push(newRecord);
   await saveDB();
+  // Kalau catatan ini berasal dari tombol "Buat Catatan Pelanggaran" di Laporan Santri,
+  // tautkan balik ke laporannya supaya tidak tercatat dobel saat laporan ditandai "Selesai".
+  if(pendingLogReportId){
+    const linkedReportId = pendingLogReportId;
+    pendingLogReportId = null;
+    await saveDBFresh(fresh => {
+      const r = (fresh.violationReports || []).find(x=>x.id===linkedReportId);
+      if(r && !r.violationRecordId) r.violationRecordId = newRecord.id;
+    });
+  }
   toast("Pelanggaran berhasil dicatat.");
   notifyViolationEmail(studentById(studentId), typeById(typeId), date, time, note);
   renderTeacherLogViolation();
@@ -7088,7 +7143,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "expenses", icon: "trending_down", label: "Uang Keluar" },
   { id: "violation-types", icon: "rule", label: "Jenis Pelanggaran" },
   { id: "log-violation", icon: "report_problem", label: "Catat Pelanggaran" },
-  { id: "reports", icon: "flag", label: "Laporan Teman" },
+  { id: "reports", icon: "flag", label: "Laporan Santri" },
   { id: "visits", icon: "calendar_month", label: "Jadwal Kunjungan" },
   { id: "izin", icon: "assignment_turned_in", label: "Perizinan Santri" },
   { id: "laporan", icon: "summarize", label: "Laporan" },
@@ -7160,9 +7215,10 @@ function setActiveNav(id){
 
 function teacherGo(page){
   currentTeacherPage = page;
+  if(page !== "log-violation") pendingLogReportId = null;
   setActiveNav(page);
   closeTeacherMobileNav();
-  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Teman", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
+  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
   document.getElementById("teacher-page-title").textContent = titles[page];
   TEACHER_RENDERERS[page]();
 }

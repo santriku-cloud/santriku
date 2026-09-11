@@ -3221,6 +3221,7 @@ let teacherViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:""
 let studentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let parentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let reportViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let reportHafalanFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 // Saat guru klik "Buat Catatan Pelanggaran" pada sebuah Laporan Santri, id laporan itu disimpan
 // di sini sementara. Kalau guru lalu menekan "+ Catat", catatan pelanggaran yang dibuat akan
 // ditautkan ke laporan tsb (r.violationRecordId) supaya nanti tidak dobel tercatat saat laporan
@@ -4279,6 +4280,7 @@ function applyViolationFilter(prefix){
   else if(prefix==="student"){ studentViolationFilter = f; renderStudentViolationList(); }
   else if(prefix==="parent"){ parentViolationFilter = f; renderParentViolationList(); }
   else if(prefix==="report"){ reportViolationFilter = f; renderTeacherReports(); }
+  else if(prefix==="hafalan-report"){ reportHafalanFilter = f; renderTeacherReports(); }
 }
 
 function resetViolationFilter(prefix){
@@ -4287,6 +4289,7 @@ function resetViolationFilter(prefix){
   else if(prefix==="student"){ studentViolationFilter = empty; renderStudentDashboard(); }
   else if(prefix==="parent"){ parentViolationFilter = empty; renderParentDashboard(); }
   else if(prefix==="report"){ reportViolationFilter = empty; renderTeacherReports(); }
+  else if(prefix==="hafalan-report"){ reportHafalanFilter = empty; renderTeacherReports(); }
 }
 
 function durationDays(startIso, endIso){
@@ -6749,7 +6752,9 @@ function renderTeacherReports(){
     .sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
-  const hafalanList = [...(DB.hafalanReports || [])].sort((a,b)=>
+  const hafalanList = [...(DB.hafalanReports || [])]
+    .filter(r=>violationMatchesFilter(r, reportHafalanFilter))
+    .sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
 
@@ -6809,6 +6814,9 @@ function renderTeacherReports(){
       <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3">
         <div><h4 class="font-display font-bold">Laporan Hafalan</h4><p class="text-xs text-on-surface-variant mt-1">Seluruh laporan hafalan yang dikirim melalui Barcode Umum SIBEST.</p></div>
         <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full whitespace-nowrap">${hafalanList.length} laporan</span>
+      </div>
+      <div class="px-5 pt-3">
+        ${violationFilterBar("hafalan-report", reportHafalanFilter)}
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-xs">

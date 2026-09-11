@@ -6406,72 +6406,80 @@ function closeMediaLightbox(){
 
 function renderTeacherReports(){
   const el = document.getElementById("teacher-content");
-  const list = [...(DB.violationReports || [])].sort((a,b)=>
+  const violationList = [...(DB.violationReports || [])].sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
   const hafalanList = [...(DB.hafalanReports || [])].sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
+
+  const hafalanRows = hafalanList.map(r=>`
+    <tr class="border-t border-outline-variant hover:bg-surface-container-low">
+      <td class="p-3 font-semibold whitespace-nowrap">${escapeHtml(r.studentName||"-")}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</td>
+      <td class="p-3 whitespace-nowrap">${formatDate(r.date)}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.time||"-")}</td>
+      <td class="p-3 whitespace-nowrap">
+        <button onclick="openEditHafalanModal('${r.id}')" class="text-blue-600 hover:underline text-xs font-semibold mr-3">Edit</button>
+        <button onclick="deleteHafalanReport('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
+      </td>
+    </tr>`).join("");
+
+  const violationRows = violationList.map(r=>{
+    const target = studentById(r.targetId);
+    const reporter = studentById(r.reporterId);
+    const mediaList = (r.media && r.media.length) ? r.media : (r.mediaDataUrl ? [{ dataUrl:r.mediaDataUrl, type:r.mediaType||"image" }] : []);
+    const evidence = mediaList.length ? `Bukti (${mediaList.length})` : "-";
+    return `<tr class="border-t border-outline-variant hover:bg-surface-container-low align-top">
+      <td class="p-3 font-semibold">${escapeHtml(target ? target.name : "(siswa tidak ditemukan)")}${target && target.kelas ? `<span class="block text-xs text-on-surface-variant font-normal">${escapeHtml(target.kelas)}</span>` : ""}</td>
+      <td class="p-3">${escapeHtml(reporter ? reporter.name : "(tidak diketahui)")}</td>
+      <td class="p-3 min-w-[220px] whitespace-pre-wrap">${escapeHtml(r.description||"-")}</td>
+      <td class="p-3 whitespace-nowrap">${formatDate(r.date)}<span class="block text-xs text-on-surface-variant">${escapeHtml(r.time||"-")}</span></td>
+      <td class="p-3 whitespace-nowrap">${reportStatusBadge(r.status)}</td>
+      <td class="p-3 whitespace-nowrap">${r.points ? `${r.points} pts` : "-"}</td>
+      <td class="p-3 whitespace-nowrap">${evidence}</td>
+      <td class="p-3 whitespace-nowrap">
+        ${r.status === "baru" ? `<button onclick="processViolationReport('${r.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Proses</button>` : ""}
+        ${r.status === "baru" ? `<button onclick="markReportStatus('${r.id}','diproses')" class="text-on-surface-variant hover:underline text-xs font-semibold mr-3">Diproses</button>` : ""}
+        ${r.status === "diproses" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="text-primary hover:underline text-xs font-semibold mr-3">Selesai</button>` : ""}
+        <button onclick="deleteViolationReport('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
+      </td>
+    </tr>`;
+  }).join("");
+
   el.innerHTML = `
-    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4 mb-4">
-      <p class="text-xs text-on-surface-variant">Laporan yang masuk lewat QR "Lapor Pelanggaran Teman". Nama pelapor hanya ditampilkan di sini untuk guru/admin — mohon jaga kerahasiaannya supaya santri tetap berani melapor.</p>
+    <div class="mb-6">
+      <h3 class="font-display text-2xl font-bold">Laporan Santri</h3>
+      <p class="text-on-surface-variant">Semua laporan hafalan dan laporan pelanggaran ditampilkan dalam tabel terpisah.</p>
     </div>
-    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4 mb-4">
-      <div class="flex items-center justify-between gap-3 mb-3">
-        <div><h3 class="font-display font-bold">Laporan Hafalan</h3><p class="text-xs text-on-surface-variant">Laporan yang dikirim melalui Barcode Umum SIBEST.</p></div>
-        <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full">${hafalanList.length} laporan</span>
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden mb-6">
+      <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3">
+        <div><h4 class="font-display font-bold">Laporan Hafalan</h4><p class="text-xs text-on-surface-variant mt-1">Seluruh laporan hafalan yang dikirim melalui Barcode Umum SIBEST.</p></div>
+        <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full whitespace-nowrap">${hafalanList.length} laporan</span>
       </div>
-      <div class="divide-y divide-outline-variant">
-        ${hafalanList.map(r=>`<div class="py-3 flex items-start justify-between gap-3 flex-wrap"><div><p class="font-semibold text-sm">${escapeHtml(r.studentName||"-")}</p><p class="text-xs text-on-surface-variant">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"} sampai ${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</p><p class="text-xs text-on-surface-variant mt-1">${formatDate(r.date)} • ${escapeHtml(r.time||"-")}</p><div class="flex gap-3 mt-2"><button onclick="openEditHafalanModal('${r.id}')" class="text-blue-600 hover:underline text-xs font-semibold">Edit</button><button onclick="deleteHafalanReport('${r.id}')" class="text-red-600 hover:underline text-xs font-semibold">Hapus</button></div></div><span class="text-xs font-semibold bg-primary-container text-on-primary-container px-2 py-1 rounded-full">Hafalan</span></div>`).join("") || `<p class="py-4 text-center text-sm text-on-surface-variant">Belum ada laporan hafalan.</p>`}
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-surface-container"><tr>
+            <th class="p-3 font-semibold whitespace-nowrap">Nama Siswa</th><th class="p-3 font-semibold whitespace-nowrap">Dari</th><th class="p-3 font-semibold whitespace-nowrap">Sampai</th><th class="p-3 font-semibold whitespace-nowrap">Tanggal</th><th class="p-3 font-semibold whitespace-nowrap">Waktu</th><th class="p-3 font-semibold whitespace-nowrap">Aksi</th>
+          </tr></thead>
+          <tbody>${hafalanRows || `<tr><td colspan="6" class="p-6 text-center text-on-surface-variant">Belum ada laporan hafalan.</td></tr>`}</tbody>
+        </table>
       </div>
     </div>
-    <div class="space-y-3">
-      ${list.map(r=>{
-        const target = studentById(r.targetId);
-        const reporter = studentById(r.reporterId);
-        // Kompatibel dengan laporan lama yang masih pakai field tunggal mediaDataUrl/mediaType.
-        const mediaList = (r.media && r.media.length)
-          ? r.media
-          : (r.mediaDataUrl ? [{ dataUrl: r.mediaDataUrl, type: r.mediaType || "image" }] : []);
-        const media = mediaList.length ? `
-          <div class="mt-3">
-            <button type="button" onclick="toggleReportMediaGrid('${r.id}')" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-outline-variant text-xs font-semibold hover:bg-surface-container transition-colors">
-              <span class="material-symbols-outlined text-base">attachment</span>
-              Bukti (${mediaList.length})
-              <span class="material-symbols-outlined text-base" id="report-media-caret-${r.id}">expand_more</span>
-            </button>
-            <div id="report-media-grid-${r.id}" class="hidden flex flex-wrap gap-2 mt-2">
-              ${mediaList.map(m => `
-                <button type="button" onclick="openMediaLightbox('${m.dataUrl}','${m.type}')" class="relative w-20 h-20 rounded-lg overflow-hidden border border-outline-variant bg-surface-container hover:opacity-80 transition-opacity">
-                  ${m.type === "video"
-                    ? `<video src="${m.dataUrl}" class="w-full h-full object-cover pointer-events-none"></video>`
-                    : `<img src="${m.dataUrl}" class="w-full h-full object-cover"/>`}
-                  ${m.type === "video" ? `<span class="absolute bottom-1 left-1 material-symbols-outlined text-white text-base drop-shadow">play_circle</span>` : ""}
-                </button>
-              `).join("")}
-            </div>
-          </div>
-        ` : "";
-        return `
-        <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4">
-          <div class="flex items-start justify-between gap-2">
-            <div>
-              <p class="font-semibold text-sm">Terlapor: ${escapeHtml(target ? target.name : "(siswa tidak ditemukan)")}${target && target.kelas ? ` <span class="text-on-surface-variant font-normal">(${escapeHtml(target.kelas)})</span>` : ""}</p>
-              <p class="text-xs text-on-surface-variant mt-0.5">Pelapor: ${escapeHtml(reporter ? reporter.name : "(tidak diketahui)")} • ${formatDateTimeFull(r.date, r.time)}</p>
-            </div>
-            ${reportStatusBadge(r.status)}
-          </div>
-          <p class="text-sm mt-3 whitespace-pre-wrap">${escapeHtml(r.description)}</p>
-          ${media}
-          ${r.status !== "baru" && r.points ? `<p class="text-xs text-on-surface-variant mt-2">Poin pelanggaran dicatat: <span class="font-semibold text-error">${r.points} pts</span></p>` : ""}
-          <div class="flex flex-wrap gap-2 mt-3">
-            ${r.status === "baru" ? `<button onclick="processViolationReport('${r.id}')" class="bg-primary text-on-primary rounded-lg text-xs font-semibold py-2 px-3 hover:shadow-md transition-all">Buat Catatan Pelanggaran</button>` : ""}
-            ${r.status === "baru" ? `<button onclick="markReportStatus('${r.id}','diproses')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Diproses</button>` : ""}
-            ${r.status === "diproses" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="bg-surface-container text-on-surface rounded-lg text-xs font-semibold py-2 px-3 border border-outline-variant hover:shadow transition-all">Tandai Selesai</button>` : ""}
-            <button onclick="deleteViolationReport('${r.id}')" class="text-error hover:underline text-xs font-semibold ml-auto">Hapus</button>
-          </div>
-        </div>`;
-      }).join("") || `<p class="p-6 text-center text-on-surface-variant text-sm bg-surface-container-lowest rounded-xl border border-outline-variant">Belum ada laporan masuk.</p>`}
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+      <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3">
+        <div><h4 class="font-display font-bold">Laporan Pelanggaran</h4><p class="text-xs text-on-surface-variant mt-1">Laporan rahasia yang masuk melalui Barcode Umum SIBEST.</p></div>
+        <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full whitespace-nowrap">${violationList.length} laporan</span>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-surface-container"><tr>
+            <th class="p-3 font-semibold whitespace-nowrap">Terlapor</th><th class="p-3 font-semibold whitespace-nowrap">Pelapor</th><th class="p-3 font-semibold">Keterangan</th><th class="p-3 font-semibold whitespace-nowrap">Tanggal</th><th class="p-3 font-semibold whitespace-nowrap">Status</th><th class="p-3 font-semibold whitespace-nowrap">Poin</th><th class="p-3 font-semibold whitespace-nowrap">Bukti</th><th class="p-3 font-semibold whitespace-nowrap">Aksi</th>
+          </tr></thead>
+          <tbody>${violationRows || `<tr><td colspan="8" class="p-6 text-center text-on-surface-variant">Belum ada laporan pelanggaran.</td></tr>`}</tbody>
+        </table>
+      </div>
     </div>
   `;
 }

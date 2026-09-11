@@ -3739,6 +3739,12 @@ function dashboardViolationSeries(){
   return { labels: months.map(m=>m.label), data };
 }
 
+function dashboardHafalanSeries(){
+  const months = last6MonthsMeta();
+  const data = months.map(m=> (DB.hafalanReports||[]).filter(r=> r.date && r.date.slice(0,7)===m.key).length);
+  return { labels: months.map(m=>m.label), data };
+}
+
 function dashboardIzinVisitSeries(){
   const months = last6MonthsMeta();
   const data = months.map(m=>{
@@ -3772,6 +3778,7 @@ function renderDashboardCharts(){
     { id:"chart-expense", series: dashboardExpenseSeries(), color:"#5c6b12", label:"Uang Keluar" },
     { id:"chart-cash", series: dashboardCashSeries(), color:"#2e9254", label:"Uang Kas" },
     { id:"chart-violation", series: dashboardViolationSeries(), color:"#7c8a2a", label:"Pelanggaran" },
+    { id:"chart-hafalan", series: dashboardHafalanSeries(), color:"#249653", label:"Hafalan" },
     { id:"chart-izinvisit", series: dashboardIzinVisitSeries(), color:"#4d9e6a", label:"Izin & Jenguk" },
   ];
   configs.forEach(cfg=>{
@@ -3895,12 +3902,19 @@ function renderTeacherDashboard(){
     </div>
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
       <div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div class="border border-outline-variant rounded-xl p-4 md:col-span-2">
+        <div class="border border-outline-variant rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
             <p class="text-sm font-semibold">Pelanggaran Santri</p>
             ${trendBadge(violSeries.data, "down")}
           </div>
           <div class="h-40 md:h-56"><canvas id="chart-violation"></canvas></div>
+        </div>
+        <div class="border border-outline-variant rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-sm font-semibold">Laporan Hafalan</p>
+            ${trendBadge(dashboardHafalanSeries().data, "up")}
+          </div>
+          <div class="h-40 md:h-56"><canvas id="chart-hafalan"></canvas></div>
         </div>
         <div class="border border-outline-variant rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
@@ -4695,6 +4709,23 @@ function laporanTypeSummaryLabel(ls){
   return `${ls.types.length} jenis data dipilih`;
 }
 
+function laporanPreviewTable(key, filter){
+  const rows = laporanRows(key, filter);
+  const title = key === "hafalan" ? "Laporan Hafalan" : "Riwayat Pelanggaran";
+  const icon = key === "hafalan" ? "menu_book" : "report_problem";
+  if(!rows.length){
+    return `<section class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5">
+      <div class="flex items-center gap-2 mb-2"><span class="material-symbols-outlined text-primary">${icon}</span><h4 class="font-display font-bold">${title}</h4></div>
+      <p class="text-sm text-on-surface-variant">Belum ada data untuk filter yang dipilih.</p>
+    </section>`;
+  }
+  const headers = Object.keys(rows[0]);
+  return `<section class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden">
+    <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3"><div class="flex items-center gap-2"><span class="material-symbols-outlined text-primary">${icon}</span><h4 class="font-display font-bold">${title}</h4></div><span class="text-xs font-semibold bg-primary-container text-on-primary-container px-3 py-1 rounded-full">${rows.length} data</span></div>
+    <div class="overflow-x-auto"><table class="w-full text-left text-xs"><thead class="bg-surface-container"><tr>${headers.map(h=>`<th class="p-3 font-semibold whitespace-nowrap">${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr class="border-t border-outline-variant hover:bg-surface-container-low">${headers.map(h=>`<td class="p-3 align-top">${escapeHtml(String(r[h] ?? "-"))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+  </section>`;
+}
+
 function renderTeacherLaporan(){
   const el = document.getElementById("teacher-content");
   const ls = laporanState;
@@ -4812,6 +4843,12 @@ function renderTeacherLaporan(){
         </button>
       </div>
     </div>
+    ${ls.types.includes("hafalan") || ls.types.includes("pelanggaran") ? `
+      <div class="mt-6 mb-2"><h4 class="font-display font-bold">Pratinjau Tabel Laporan</h4><p class="text-xs text-on-surface-variant">Tabel hafalan dan pelanggaran ditampilkan terpisah. Data yang sama dapat diunduh melalui tombol Excel atau PDF di atas.</p></div>
+      <div class="space-y-4">
+        ${ls.types.includes("hafalan") ? laporanPreviewTable("hafalan", currentLaporanFilter()) : ""}
+        ${ls.types.includes("pelanggaran") ? laporanPreviewTable("pelanggaran", currentLaporanFilter()) : ""}
+      </div>` : ""}
   `;
 }
 

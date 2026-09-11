@@ -484,7 +484,7 @@ tailwind.config = {
 <!-- ============ LAPORAN HAFALAN ============ -->
 <div id="screen-hafalan" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10 bg-surface-container-low">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-6 w-full max-w-md fade-in">
-    <button onclick="leavePublicAccess()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
+    <button onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center text-secondary mb-4"><span class="material-symbols-outlined">menu_book</span></div>
     <h2 class="font-display text-xl font-bold mb-1">Laporan Hafalan</h2>
     <p class="text-sm text-on-surface-variant mb-5">Pilih nama surah atau ketik beberapa huruf. Tanggal dan waktu mengikuti perangkat.</p>
@@ -505,6 +505,7 @@ tailwind.config = {
 <!-- ============ LAPOR PELANGGARAN TEMAN (akses publik via QR) ============ -->
 <div id="screen-report-violation" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10 bg-surface-container-low">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-6 w-full max-w-md fade-in">
+    <button type="button" onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-error-container flex items-center justify-center text-on-error-container mb-4">
       <span class="material-symbols-outlined">campaign</span>
     </div>
@@ -551,7 +552,6 @@ tailwind.config = {
 
     <button id="report-submit-btn" onclick="submitViolationReport()" class="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan</button>
     <p id="report-error" class="hidden text-error text-xs mt-2"></p>
-    <button type="button" onclick="leavePublicAccess()" class="w-full mt-3 text-sm text-on-surface-variant hover:text-primary">Selesai dan Keluar</button>
   </div>
 </div>
 
@@ -619,7 +619,7 @@ tailwind.config = {
 <!-- ============ STUDENT LOGIN ============ -->
 <div id="screen-student-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
-    <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
+    <button onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center text-secondary mb-4">
       <span class="material-symbols-outlined">backpack</span>
     </div>
@@ -8086,12 +8086,14 @@ function initHafalanForm(){
   updateHafalanAyatLimits();
 }
 function leavePublicAccess(){
-  // Hapus hash barcode agar tombol kembali/refresh tidak menampilkan gerbang publik lagi.
+  // Keluar dari mode Barcode Umum hanya dipakai tombol "Kembali ke Beranda".
+  try { sessionStorage.removeItem("sibestPublicGateway"); } catch(e) {}
   try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch(e) { window.location.hash = ""; }
   goRole("public-exit");
 }
 function backToPublicGateway(){
-  // Kembali ke menu tiga layanan publik tanpa memproses ulang token barcode.
+  // Semua tombol Kembali dari tiga layanan kembali ke satu halaman pilihan layanan.
+  try { sessionStorage.setItem("sibestPublicGateway", "1"); } catch(e) {}
   goRole("public-gateway");
 }
 function openPublicStudentLogin(){ goRole('student'); }
@@ -8120,7 +8122,7 @@ async function submitHafalanReport(){
       if(!duplicate) db.hafalanReports.push({...candidate,id:uid('hf'),createdAt:new Date().toISOString()});
     });
     if(duplicate){ toast('Laporan hafalan yang sama sudah tercatat.', 'error'); return; }
-    toast('Laporan hafalan berhasil dikirim.'); leavePublicAccess();
+    toast('Laporan hafalan berhasil dikirim.'); backToPublicGateway();
   } finally {
     hafalanSubmitBusy = false;
     if(submitBtn){ submitBtn.disabled = false; submitBtn.classList.remove('opacity-60','cursor-not-allowed'); }
@@ -8133,16 +8135,23 @@ function handleEntryToken(){
   if(mReport){
     const token = mReport[1];
     if(!DB.settings || token !== DB.settings.reportToken){ goRole("barcode-invalid"); return true; }
+    try { sessionStorage.setItem("sibestPublicGateway", "1"); } catch(e) {}
     goRole("public-gateway");
     return true;
   }
   if(hash === "#report"){
     // Format lama tanpa token (barcode yang dicetak sebelum fitur "Ganti Barcode" ada).
+    try { sessionStorage.setItem("sibestPublicGateway", "1"); } catch(e) {}
     goRole("public-gateway");
     return true;
   }
   const m = hash.match(/^#([sp])=(.+)$/);
-  if(!m) return false; // tidak ada token → tampilkan halaman peran (Guru/Admin) seperti biasa
+  if(!m){
+    try {
+      if(sessionStorage.getItem("sibestPublicGateway") === "1") { goRole("public-gateway"); return true; }
+    } catch(e) {}
+    return false; // tidak ada token → tampilkan halaman peran (Guru/Admin) seperti biasa
+  }
 
   const [, kind, token] = m;
   if(kind === "s"){

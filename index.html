@@ -236,6 +236,44 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ EDIT LAPORAN HAFALAN MODAL ============ -->
+<div id="edit-hafalan-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditHafalanModal()">
+  <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
+    <button onclick="closeEditHafalanModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-4">Edit Laporan Hafalan</h4>
+    <input id="edit-hafalan-id" type="hidden"/>
+    <div class="space-y-3">
+      <div><label class="text-xs font-semibold text-on-surface-variant">Nama siswa</label>
+        <input id="edit-hafalan-student" type="text" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs font-semibold text-on-surface-variant">Surah mulai</label>
+          <input id="edit-hafalan-from-surah" type="text" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+        <div><label class="text-xs font-semibold text-on-surface-variant">Ayat mulai</label>
+          <input id="edit-hafalan-from-ayah" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs font-semibold text-on-surface-variant">Surah selesai</label>
+          <input id="edit-hafalan-to-surah" type="text" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+        <div><label class="text-xs font-semibold text-on-surface-variant">Ayat selesai</label>
+          <input id="edit-hafalan-to-ayah" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div><label class="text-xs font-semibold text-on-surface-variant">Tanggal</label>
+          <input id="edit-hafalan-date" type="date" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+        <div><label class="text-xs font-semibold text-on-surface-variant">Jam</label>
+          <input id="edit-hafalan-time" type="time" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+      </div>
+      <p id="edit-hafalan-error" class="hidden text-error text-xs"></p>
+    </div>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeEditHafalanModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button onclick="saveEditHafalan()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ PHOTO CROP MODAL (geser & perbesar foto sebelum dipasang) ============ -->
 <div id="photo-crop-modal" class="hidden fixed inset-0 bg-black/70 z-[999] items-center justify-center px-4">
   <div class="relative w-full max-w-xs fade-in bg-surface-container-lowest rounded-2xl p-5">
@@ -3146,6 +3184,19 @@ function nowHHMM(){
   return String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0");
 }
 
+function hafalanFingerprint(r){
+  return [r.studentId||"", (r.studentName||"").trim().toLowerCase(), (r.fromSurah||"").trim().toLowerCase(), Number(r.fromAyah)||0, (r.toSurah||"").trim().toLowerCase(), Number(r.toAyah)||0, r.date||"", r.time||""].join("|");
+}
+function deduplicateHafalanReports(reports){
+  const seen = new Set();
+  return (reports||[]).filter(r=>{
+    const key = hafalanFingerprint(r);
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 async function loadDB(){
   try {
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "edusyncData"));
@@ -3163,6 +3214,9 @@ async function loadDB(){
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
       if (!DB.settings.reportToken) DB.settings.reportToken = genToken();
       let needSave = false;
+      const hafalanBeforeDedupe = DB.hafalanReports.length;
+      DB.hafalanReports = deduplicateHafalanReports(DB.hafalanReports);
+      if (DB.hafalanReports.length !== hafalanBeforeDedupe) needSave = true;
       if (!DB.classList) {
         // Migrasi data lama: bentuk daftar kelas dari nilai "kelas" yang sudah
         // terlanjur diketik bebas pada data siswa, supaya tidak ada data yang hilang.
@@ -6319,7 +6373,7 @@ function renderTeacherReports(){
         <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full">${hafalanList.length} laporan</span>
       </div>
       <div class="divide-y divide-outline-variant">
-        ${hafalanList.map(r=>`<div class="py-3 flex items-start justify-between gap-3 flex-wrap"><div><p class="font-semibold text-sm">${escapeHtml(r.studentName||"-")}</p><p class="text-xs text-on-surface-variant">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"} sampai ${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</p><p class="text-xs text-on-surface-variant mt-1">${formatDate(r.date)} • ${escapeHtml(r.time||"-")}</p></div><span class="text-xs font-semibold bg-primary-container text-on-primary-container px-2 py-1 rounded-full">Hafalan</span></div>`).join("") || `<p class="py-4 text-center text-sm text-on-surface-variant">Belum ada laporan hafalan.</p>`}
+        ${hafalanList.map(r=>`<div class="py-3 flex items-start justify-between gap-3 flex-wrap"><div><p class="font-semibold text-sm">${escapeHtml(r.studentName||"-")}</p><p class="text-xs text-on-surface-variant">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"} sampai ${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</p><p class="text-xs text-on-surface-variant mt-1">${formatDate(r.date)} • ${escapeHtml(r.time||"-")}</p><div class="flex gap-3 mt-2"><button onclick="openEditHafalanModal('${r.id}')" class="text-blue-600 hover:underline text-xs font-semibold">Edit</button><button onclick="deleteHafalanReport('${r.id}')" class="text-red-600 hover:underline text-xs font-semibold">Hapus</button></div></div><span class="text-xs font-semibold bg-primary-container text-on-primary-container px-2 py-1 rounded-full">Hafalan</span></div>`).join("") || `<p class="py-4 text-center text-sm text-on-surface-variant">Belum ada laporan hafalan.</p>`}
       </div>
     </div>
     <div class="space-y-3">
@@ -7895,6 +7949,35 @@ async function submitStudentIzin(){
 const QURAN_SURAHS = [
 "Al-Fatihah|7","Al-Baqarah|286","Ali Imran|200","An-Nisa|176","Al-Maidah|120","Al-Anam|165","Al-Araf|206","Al-Anfal|75","At-Taubah|129","Yunus|109","Hud|123","Yusuf|111","Ar-Rad|43","Ibrahim|52","Al-Hijr|99","An-Nahl|128","Al-Isra|111","Al-Kahf|110","Maryam|98","Taha|135","Al-Anbiya|112","Al-Hajj|78","Al-Muminun|118","An-Nur|64","Al-Furqan|77","Asy-Syuara|227","An-Naml|93","Al-Qasas|88","Al-Ankabut|69","Ar-Rum|60","Luqman|34","As-Sajdah|30","Al-Ahzab|73","Saba|54","Fatir|45","Yasin|83","As-Saffat|182","Sad|88","Az-Zumar|75","Ghafir|85","Fussilat|54","Asy-Syura|53","Az-Zukhruf|89","Ad-Dukhan|59","Al-Jasiyah|37","Al-Ahqaf|35","Muhammad|38","Al-Fath|29","Al-Hujurat|18","Qaf|45","Az-Zariyat|60","At-Tur|49","An-Najm|62","Al-Qamar|55","Ar-Rahman|78","Al-Waqiah|96","Al-Hadid|29","Al-Mujadilah|22","Al-Hasyr|24","Al-Mumtahanah|13","As-Saff|14","Al-Jumah|11","Al-Munafiqun|11","At-Tagabun|18","At-Talaq|12","At-Tahrim|12","Al-Mulk|30","Al-Qalam|52","Al-Haqqah|52","Al-Maarij|44","Nuh|28","Al-Jinn|28","Al-Muzzammil|20","Al-Muddassir|56","Al-Qiyamah|40","Al-Insan|31","Al-Mursalat|50","An-Naba|40","An-Naziat|46","Abasa|42","At-Takwir|29","Al-Infitar|19","Al-Mutaffifin|36","Al-Insyiqaq|25","Al-Buruj|22","At-Tariq|17","Al-Ala|19","Al-Gasyiyah|26","Al-Fajr|30","Al-Balad|20","Asy-Syams|15","Al-Lail|21","Ad-Duha|11","Al-Insyirah|8","At-Tin|8","Al-Alaq|19","Al-Qadr|5","Al-Bayyinah|8","Az-Zalzalah|8","Al-Adiyat|11","Al-Qariah|11","At-Takasur|8","Al-Asr|3","Al-Humazah|9","Al-Fil|5","Quraisy|4","Al-Maun|7","Al-Kausar|3","Al-Kafirun|6","An-Nasr|3","Al-Lahab|5","Al-Ikhlas|4","Al-Falaq|5","An-Nas|6"
 ].map(x=>{const [name,ayah]=x.split('|'); return {name, ayah:Number(ayah)};});
+function openEditHafalanModal(id){
+  const r=(DB.hafalanReports||[]).find(x=>x.id===id); if(!r) return;
+  document.getElementById('edit-hafalan-id').value=r.id;
+  document.getElementById('edit-hafalan-student').value=r.studentName||'';
+  document.getElementById('edit-hafalan-from-surah').value=r.fromSurah||'';
+  document.getElementById('edit-hafalan-from-ayah').value=r.fromAyah||'';
+  document.getElementById('edit-hafalan-to-surah').value=r.toSurah||'';
+  document.getElementById('edit-hafalan-to-ayah').value=r.toAyah||'';
+  document.getElementById('edit-hafalan-date').value=r.date||'';
+  document.getElementById('edit-hafalan-time').value=r.time||'';
+  document.getElementById('edit-hafalan-error').classList.add('hidden');
+  const modal=document.getElementById('edit-hafalan-modal'); modal.classList.remove('hidden'); modal.classList.add('flex');
+}
+function closeEditHafalanModal(){ const modal=document.getElementById('edit-hafalan-modal'); if(modal){modal.classList.add('hidden');modal.classList.remove('flex');} }
+async function saveEditHafalan(){
+  const id=document.getElementById('edit-hafalan-id').value, name=document.getElementById('edit-hafalan-student').value.trim(), fs=document.getElementById('edit-hafalan-from-surah').value.trim(), ts=document.getElementById('edit-hafalan-to-surah').value.trim(), fa=Number(document.getElementById('edit-hafalan-from-ayah').value), ta=Number(document.getElementById('edit-hafalan-to-ayah').value), date=document.getElementById('edit-hafalan-date').value, time=document.getElementById('edit-hafalan-time').value, err=document.getElementById('edit-hafalan-error');
+  const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
+  if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
+  const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase()); let duplicate=false;
+  await saveDBFresh(db=>{ const reports=deduplicateHafalanReports(db.hafalanReports||[]); const r=reports.find(x=>x.id===id); if(!r) return; const candidate={studentId:student?student.id:(r.studentId||null),studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time}; duplicate=reports.some(x=>x.id!==id&&hafalanFingerprint(x)===hafalanFingerprint(candidate)); if(!duplicate) Object.assign(r,candidate); db.hafalanReports=reports; });
+  if(duplicate){err.textContent='Data laporan yang sama sudah ada.';err.classList.remove('hidden');return;}
+  closeEditHafalanModal(); toast('Laporan hafalan diperbarui.'); renderTeacherReports();
+}
+async function deleteHafalanReport(id){
+  if(!confirm('Hapus laporan hafalan ini secara permanen?')) return;
+  await saveDBFresh(db=>{db.hafalanReports=deduplicateHafalanReports(db.hafalanReports||[]).filter(r=>r.id!==id);});
+  toast('Laporan hafalan dihapus.'); renderTeacherReports();
+}
+
 function initHafalanForm(){
   const list=document.getElementById('surah-list'), students=document.getElementById('hafalan-student-list');
   if(list) list.innerHTML=QURAN_SURAHS.map(x=>`<option value="${x.name}">${x.name} — ${x.ayah} ayat</option>`).join('');
@@ -7914,13 +7997,31 @@ function openPublicHafalan(){ goRole('hafalan'); initHafalanForm(); }
 function updateHafalanAyatLimits(){
   [['hafalan-from-surah','hafalan-from-ayah'],['hafalan-to-surah','hafalan-to-ayah']].forEach(([sid,aid])=>{const s=QURAN_SURAHS.find(x=>x.name.toLowerCase()===((document.getElementById(sid)||{}).value||'').trim().toLowerCase()); const a=document.getElementById(aid); if(a){a.max=s?s.ayah:286; if(Number(a.value)>a.max)a.value=a.max;}});
 }
+let hafalanSubmitBusy = false;
 async function submitHafalanReport(){
-  const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=document.getElementById('hafalan-date').value, time=document.getElementById('hafalan-time').value, err=document.getElementById('hafalan-error');
-  const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
-  if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
-  const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase());
-  await saveDBFresh(db=>{if(!db.hafalanReports)db.hafalanReports=[];db.hafalanReports.push({id:uid('hf'),studentId:student?student.id:null,studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time,createdAt:new Date().toISOString()});});
-  toast('Laporan hafalan berhasil dikirim.'); leavePublicAccess();
+  if(hafalanSubmitBusy) return;
+  hafalanSubmitBusy = true;
+  const submitBtn = document.querySelector('#screen-hafalan button[onclick="submitHafalanReport()"]');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.classList.add('opacity-60','cursor-not-allowed'); }
+  try {
+    const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=document.getElementById('hafalan-date').value, time=document.getElementById('hafalan-time').value, err=document.getElementById('hafalan-error');
+    const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
+    if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
+    const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase());
+    let duplicate = false;
+    await saveDBFresh(db=>{
+      if(!db.hafalanReports) db.hafalanReports=[];
+      db.hafalanReports = deduplicateHafalanReports(db.hafalanReports);
+      const candidate = {studentId:student?student.id:null,studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time};
+      duplicate = db.hafalanReports.some(r=>hafalanFingerprint(r)===hafalanFingerprint(candidate));
+      if(!duplicate) db.hafalanReports.push({...candidate,id:uid('hf'),createdAt:new Date().toISOString()});
+    });
+    if(duplicate){ toast('Laporan hafalan yang sama sudah tercatat.', 'error'); return; }
+    toast('Laporan hafalan berhasil dikirim.'); leavePublicAccess();
+  } finally {
+    hafalanSubmitBusy = false;
+    if(submitBtn){ submitBtn.disabled = false; submitBtn.classList.remove('opacity-60','cursor-not-allowed'); }
+  }
 }
 
 function handleEntryToken(){

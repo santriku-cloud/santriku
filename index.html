@@ -683,7 +683,7 @@ tailwind.config = {
 <!-- ============ PARENT LOGIN ============ -->
 <div id="screen-parent-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
-    <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
+    <button id="parent-login-back-btn" onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-tertiary-fixed flex items-center justify-center text-tertiary mb-4">
       <span class="material-symbols-outlined">family_restroom</span>
     </div>
@@ -701,7 +701,7 @@ tailwind.config = {
 <!-- ============ STUDENT LOGIN ============ -->
 <div id="screen-student-login" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low relative overflow-hidden">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm fade-in relative z-10">
-    <button onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
+    <button id="student-login-back-btn" onclick="backToPublicGateway()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center text-secondary mb-4">
       <span class="material-symbols-outlined">backpack</span>
     </div>
@@ -767,7 +767,7 @@ tailwind.config = {
         <span class="material-symbols-outlined text-tertiary">family_restroom</span>
         <h1 class="font-display font-bold text-lg">SIBEST <span class="text-on-surface-variant font-normal text-sm">Orang Tua</span></h1>
       </div>
-      <button onclick="exitStudentOrParent()" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
+      <button onclick="exitStudentOrParent('parent')" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
     </div>
     <nav id="parent-nav" class="flex gap-1 px-4 md:px-8 pb-2 overflow-x-auto custom-scrollbar"></nav>
   </header>
@@ -787,7 +787,7 @@ tailwind.config = {
           <img id="student-profile-avatar" src="" class="w-full h-full object-cover hidden"/>
           <span id="student-profile-initials"></span>
         </button>
-        <button onclick="exitStudentOrParent()" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
+        <button onclick="exitStudentOrParent('student')" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
       </div>
     </div>
     <nav id="student-nav" class="flex gap-1 px-4 md:px-8 pb-2 overflow-x-auto custom-scrollbar"></nav>
@@ -3399,14 +3399,14 @@ function refreshCurrentView(){
   } else if(activeScreen.id === "screen-parent" && currentStudent){
     // pastikan data siswa yang sedang login masih ada & sinkron
     const fresh = studentById(currentStudent.id);
-    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent(); return; }
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent("parent"); return; }
     currentStudent = fresh;
     if(currentParentPage === "dashboard") renderParentDashboard();
     else if(currentParentPage === "kunjungan") renderParentVisits();
     else if(currentParentPage === "izin") renderParentIzin();
   } else if(activeScreen.id === "screen-student" && currentStudent){
     const fresh = studentById(currentStudent.id);
-    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent(); return; }
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent("student"); return; }
     currentStudent = fresh;
     updateStudentProfileButton();
     if(currentStudentPage === "dashboard") renderStudentDashboard();
@@ -3460,14 +3460,30 @@ function goRole(role){
   };
   document.getElementById(map[role]).classList.add("active");
   if (role === "role") { currentStudent = null; }
+  syncLoginBackButtons();
 }
 
-/* Keluar untuk siswa/orang tua: TIDAK pernah kembali ke halaman pilihan role (login guru),
-   melainkan ke halaman "sesi berakhir" — ini adalah halaman terakhir sebelum menutup web. */
-function exitStudentOrParent(){
+/* Tombol "Kembali" di halaman login siswa & orang tua hanya ditampilkan kalau
+   pengguna masuk lewat barcode umum (gerbang 3 menu). Kalau masuk lewat barcode
+   pribadi (adicard siswa / token orang tua), halaman login adalah halaman terakhir
+   — tidak ada tombol kembali lagi. */
+function syncLoginBackButtons(){
+  let fromPublicGateway = false;
+  try { fromPublicGateway = sessionStorage.getItem("sibestPublicGateway") === "1"; } catch(e) {}
+  ["student-login-back-btn", "parent-login-back-btn"].forEach(id=>{
+    const btn = document.getElementById(id);
+    if (btn) btn.classList.toggle("hidden", !fromPublicGateway);
+  });
+}
+
+/* Keluar untuk siswa: kembali ke halaman login siswa (nama & kode).
+   Keluar untuk orang tua: kembali ke halaman login orang tua (nama & NIK anak).
+   Kalau tadinya masuk lewat barcode umum, tombol "Kembali" di halaman login itu
+   masih ada untuk balik ke gerbang 3 menu; kalau masuk lewat barcode pribadi
+   (adicard), halaman login itu jadi halaman terakhir tanpa tombol kembali lagi. */
+function exitStudentOrParent(role){
   currentStudent = null;
-  try { sessionStorage.removeItem("sibestPublicGateway"); } catch(e) {}
-  goRole("logged-out");
+  goRole(role === "parent" ? "parent" : "student");
 }
 
 /* =========================================================

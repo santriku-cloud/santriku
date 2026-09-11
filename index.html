@@ -6430,7 +6430,19 @@ function renderTeacherReports(){
     const target = studentById(r.targetId);
     const reporter = studentById(r.reporterId);
     const mediaList = (r.media && r.media.length) ? r.media : (r.mediaDataUrl ? [{ dataUrl:r.mediaDataUrl, type:r.mediaType||"image" }] : []);
-    const evidence = mediaList.length ? `Bukti (${mediaList.length})` : "-";
+    const evidence = mediaList.length ? `
+      <div>
+        <button type="button" onclick="toggleReportMediaGrid('${r.id}')" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-outline-variant text-xs font-semibold hover:bg-surface-container transition-colors">
+          <span class="material-symbols-outlined text-base">attachment</span>Bukti (${mediaList.length})
+          <span class="material-symbols-outlined text-base" id="report-media-caret-${r.id}">expand_more</span>
+        </button>
+        <div id="report-media-grid-${r.id}" class="hidden flex flex-wrap gap-2 mt-2 min-w-[190px]">
+          ${mediaList.map((m, index) => `
+            <button type="button" onclick="openMediaLightbox('${String(m.dataUrl).replace(/'/g, "&#39;")}','${m.type||"image"}')" title="Lihat bukti ${index+1}" class="relative w-16 h-16 rounded-lg overflow-hidden border border-outline-variant bg-surface-container hover:opacity-80 transition-opacity">
+              ${m.type === "video" ? `<video src="${m.dataUrl}" class="w-full h-full object-cover pointer-events-none"></video><span class="absolute bottom-1 left-1 material-symbols-outlined text-white text-base drop-shadow">play_circle</span>` : `<img src="${m.dataUrl}" class="w-full h-full object-cover"/>`}
+            </button>`).join("")}
+        </div>
+      </div>` : "-";
     return `<tr class="border-t border-outline-variant hover:bg-surface-container-low align-top">
       <td class="p-3 font-semibold">${escapeHtml(target ? target.name : "(siswa tidak ditemukan)")}${target && target.kelas ? `<span class="block text-xs text-on-surface-variant font-normal">${escapeHtml(target.kelas)}</span>` : ""}</td>
       <td class="p-3">${escapeHtml(reporter ? reporter.name : "(tidak diketahui)")}</td>
@@ -6440,8 +6452,8 @@ function renderTeacherReports(){
       <td class="p-3 whitespace-nowrap">${r.points ? `${r.points} pts` : "-"}</td>
       <td class="p-3 whitespace-nowrap">${evidence}</td>
       <td class="p-3 whitespace-nowrap">
-        ${r.status === "baru" ? `<button onclick="processViolationReport('${r.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Proses</button>` : ""}
-        ${r.status === "baru" ? `<button onclick="markReportStatus('${r.id}','diproses')" class="text-on-surface-variant hover:underline text-xs font-semibold mr-3">Diproses</button>` : ""}
+        ${r.status === "baru" && !r.violationTypeId ? `<button onclick="addViolationTypeFromReport('${r.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Tambah</button>` : ""}
+        ${r.status === "baru" ? `<button onclick="processViolationReport('${r.id}')" class="text-on-surface-variant hover:underline text-xs font-semibold mr-3">Diproses</button>` : ""}
         ${r.status === "diproses" ? `<button onclick="markReportStatus('${r.id}','selesai')" class="text-primary hover:underline text-xs font-semibold mr-3">Selesai</button>` : ""}
         <button onclick="deleteViolationReport('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
       </td>
@@ -6516,7 +6528,9 @@ function promptViolationPoints(defaultValue){
 // ditandai lewat r.violationRecordId.
 function createRecordFromReport(fresh, r, points){
   if(r.violationRecordId) return; // sudah pernah dibuat, jangan dobel
-  const type = ensurePeerReportViolationType(fresh, points);
+  let type = r.violationTypeId ? (fresh.violationTypes || []).find(t=>t.id===r.violationTypeId) : null;
+  if(!type) type = ensurePeerReportViolationType(fresh, points);
+  else type.points = Number(points) || type.points || 0;
   const target = (fresh.students || []).find(s=>s.id===r.targetId);
   if(!target) return;
   const record = {
@@ -6582,6 +6596,30 @@ async function deleteViolationReport(id){
 
 // "Buat Catatan Pelanggaran": guru wajib mengisi poin pelanggaran, lalu catatan pelanggaran
 // langsung dibuat & laporan ditandai "diproses" (tombol "Tandai Selesai" baru muncul setelah ini).
+async function addViolationTypeFromReport(id){
+  const report = (DB.violationReports || []).find(x=>x.id===id);
+  if(!report) return;
+  if(report.violationTypeId){ toast("Jenis pelanggaran untuk laporan ini sudah ditambahkan.", "error"); return; }
+  const name = prompt("Nama jenis pelanggaran baru:", "Pelanggaran dari laporan santri");
+  if(name === null) return;
+  const cleanName = name.trim();
+  if(!cleanName){ toast("Nama jenis pelanggaran wajib diisi.", "error"); return; }
+  const descInput = prompt("Keterangan jenis pelanggaran (opsional):", report.description || "");
+  if(descInput === null) return;
+  await saveDBFresh(fresh => {
+    const r = (fresh.violationReports || []).find(x=>x.id===id);
+    if(!r || r.violationTypeId) return;
+    if(!fresh.violationTypes) fresh.violationTypes = [];
+    const type = { id: uid("vt"), name: cleanName, points: 0, desc: descInput.trim() || "Ditambahkan dari Laporan Santri." };
+    fresh.violationTypes.push(type);
+    r.violationTypeId = type.id;
+    r.violationTypeName = type.name;
+  });
+  toast("Jenis pelanggaran berhasil ditambahkan. Klik Diproses untuk memasukkan poin.");
+  renderTeacherReports();
+  if(typeof renderTeacherViolationTypes === "function") renderTeacherViolationTypes();
+}
+
 async function processViolationReport(id){
   const points = promptViolationPoints(10);
   if(points === null) return; // dibatalkan
@@ -6590,6 +6628,10 @@ async function processViolationReport(id){
     if(!r) return;
     r.status = "diproses";
     r.points = points;
+    if(r.violationTypeId){
+      const linkedType = (fresh.violationTypes || []).find(t=>t.id===r.violationTypeId);
+      if(linkedType){ linkedType.points = points; }
+    }
     createRecordFromReport(fresh, r, points);
   });
   toast(`Catatan pelanggaran dibuat (${points} poin).`);

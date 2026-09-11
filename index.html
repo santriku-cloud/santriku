@@ -5695,16 +5695,19 @@ async function downloadSuratIzinFromModal(){
    TEACHER: Data Siswa
    ========================================================= */
 /* Daftar kelas master (dipakai bersama oleh form Data Siswa & filter Laporan).
-   Digabung dengan nilai kelas siswa yang mungkin belum ada di daftar master,
-   supaya data lama tetap terlihat & tidak "hilang" saat dipilih. */
+   HANYA berisi kelas yang benar-benar ada di DB.classList — begitu guru
+   menghapus sebuah kelas, kelas itu otomatis hilang dari semua dropdown
+   & filter (lihat juga deleteClassOption yang mengosongkan kelas siswa
+   terkait). */
 function availableKelasList(){
-  const set = new Set(DB.classList || []);
-  DB.students.forEach(s=>{ if(s.kelas) set.add(s.kelas); });
-  return [...set].sort((a,b)=>a.localeCompare(b,"id",{numeric:true}));
+  return [...(DB.classList || [])].sort((a,b)=>a.localeCompare(b,"id",{numeric:true}));
 }
 
-/* Bangun <option> untuk dropdown pilih kelas. currentValue akan otomatis
-   disertakan meski belum ada di daftar master (mis. data lama). */
+/* Bangun <option> untuk dropdown pilih kelas, HANYA dari daftar kelas
+   master (DB.classList). Jika currentValue sudah tidak ada di daftar
+   (mis. kelasnya baru saja dihapus guru), tidak ada opsi yang otomatis
+   ter-select — dropdown akan tampil "-- Pilih Kelas --" sehingga guru
+   sadar perlu memilih ulang. */
 function classOptionsHtml(currentValue){
   const list = availableKelasList();
   if(!list.length){
@@ -5731,14 +5734,18 @@ async function addClassOption(){
 }
 
 async function deleteClassOption(name){
-  const usedCount = DB.students.filter(s=>s.kelas===name).length;
+  const affectedStudents = DB.students.filter(s=>s.kelas===name);
+  const usedCount = affectedStudents.length;
   const msg = usedCount>0
-    ? `Kelas "${name}" masih dipakai oleh ${usedCount} siswa. Kelas ini akan dihapus dari daftar pilihan (data siswa yang sudah memakainya tidak berubah). Lanjutkan?`
+    ? `Kelas "${name}" masih dipakai oleh ${usedCount} siswa. Menghapus kelas ini akan MENGOSONGKAN kelas ${usedCount} siswa tersebut di semua sistem (data siswa, filter laporan, dll) — guru perlu memilihkan ulang kelas untuk mereka satu per satu. Lanjutkan?`
     : `Hapus kelas "${name}" dari daftar pilihan?`;
   if(!confirm(msg)) return;
   DB.classList = (DB.classList||[]).filter(k=>k!==name);
+  affectedStudents.forEach(s=>{ s.kelas = ""; });
   await saveDB();
-  toast("Kelas dihapus dari daftar pilihan.");
+  toast(usedCount>0
+    ? `Kelas dihapus. Kelas ${usedCount} siswa telah dikosongkan, silakan pilih ulang.`
+    : "Kelas dihapus dari daftar pilihan.");
   renderTeacherStudents();
 }
 

@@ -308,7 +308,7 @@ tailwind.config = {
     </div>
     <div class="flex gap-3 mt-5">
       <button onclick="closeEditHafalanModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
-      <button onclick="saveEditHafalan()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">Simpan</button>
+      <button id="edit-hafalan-save-btn" onclick="saveEditHafalan()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1">Simpan</button>
     </div>
   </div>
 </div>
@@ -8350,10 +8350,20 @@ async function saveEditHafalan(){
   const id=document.getElementById('edit-hafalan-id').value, name=document.getElementById('edit-hafalan-student').value.trim(), fs=document.getElementById('edit-hafalan-from-surah').value.trim(), ts=document.getElementById('edit-hafalan-to-surah').value.trim(), fa=Number(document.getElementById('edit-hafalan-from-ayah').value), ta=Number(document.getElementById('edit-hafalan-to-ayah').value), date=document.getElementById('edit-hafalan-date').value, time=document.getElementById('edit-hafalan-time').value, err=document.getElementById('edit-hafalan-error');
   const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
   if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
-  const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase()); let duplicate=false;
-  await saveDBFresh(db=>{ const reports=deduplicateHafalanReports(db.hafalanReports||[]); const r=reports.find(x=>x.id===id); if(!r) return; const candidate={studentId:student?student.id:(r.studentId||null),studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time}; duplicate=reports.some(x=>x.id!==id&&hafalanFingerprint(x)===hafalanFingerprint(candidate)); if(!duplicate) Object.assign(r,candidate); db.hafalanReports=reports; });
-  if(duplicate){err.textContent='Data laporan yang sama sudah ada.';err.classList.remove('hidden');return;}
-  closeEditHafalanModal(); toast('Laporan hafalan diperbarui.'); renderTeacherReports();
+  const btn = document.getElementById('edit-hafalan-save-btn');
+  const btnOriginalHtml = btn ? btn.innerHTML : '';
+  if(btn){ btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Menyimpan...`; }
+  try{
+    const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase()); let duplicate=false;
+    await saveDBFresh(db=>{ const reports=deduplicateHafalanReports(db.hafalanReports||[]); const r=reports.find(x=>x.id===id); if(!r) return; const candidate={studentId:student?student.id:(r.studentId||null),studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time}; duplicate=reports.some(x=>x.id!==id&&hafalanFingerprint(x)===hafalanFingerprint(candidate)); if(!duplicate) Object.assign(r,candidate); db.hafalanReports=reports; });
+    if(duplicate){err.textContent='Data laporan yang sama sudah ada.';err.classList.remove('hidden');return;}
+    closeEditHafalanModal(); toast('Laporan hafalan diperbarui.'); renderTeacherReports();
+  } catch(e){
+    console.error(e);
+    err.textContent='Gagal menyimpan. Coba lagi.';err.classList.remove('hidden');
+  } finally {
+    if(btn){ btn.disabled = false; btn.innerHTML = 'Simpan'; }
+  }
 }
 async function deleteHafalanReport(id){
   if(!confirm('Hapus laporan hafalan ini secara permanen?')) return;

@@ -540,6 +540,15 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ SESI BERAKHIR (keluar dari akun siswa/orang tua) ============ -->
+<div id="screen-session-ended" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low">
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm text-center">
+    <div class="w-14 h-14 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container mx-auto mb-4"><span class="material-symbols-outlined text-2xl">check_circle</span></div>
+    <h2 class="font-display text-xl font-bold mb-2">Anda telah keluar</h2>
+    <p class="text-sm text-on-surface-variant">Sesi kamu di SIBEST sudah berakhir. Silakan tutup halaman/tab ini.</p>
+  </div>
+</div>
+
 <!-- ============ BARCODE UMUM / PILIHAN AKSES ============ -->
 <div id="screen-public-gateway" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10">
   <div class="public-gateway-card rounded-[2rem] p-7 sm:p-9 w-full max-w-lg fade-in">
@@ -571,7 +580,7 @@ tailwind.config = {
     </div>
     <datalist id="surah-list"></datalist>
     <p id="hafalan-error" class="hidden text-error text-xs mt-3"></p>
-    <button onclick="submitHafalanReport()" class="w-full mt-4 bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan Hafalan</button>
+    <button id="hafalan-submit-btn" onclick="submitHafalanReport()" class="w-full mt-4 bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan Hafalan</button>
   </div>
 </div>
 
@@ -758,7 +767,7 @@ tailwind.config = {
         <span class="material-symbols-outlined text-tertiary">family_restroom</span>
         <h1 class="font-display font-bold text-lg">SIBEST <span class="text-on-surface-variant font-normal text-sm">Orang Tua</span></h1>
       </div>
-      <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
+      <button onclick="exitStudentOrParent()" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
     </div>
     <nav id="parent-nav" class="flex gap-1 px-4 md:px-8 pb-2 overflow-x-auto custom-scrollbar"></nav>
   </header>
@@ -778,7 +787,7 @@ tailwind.config = {
           <img id="student-profile-avatar" src="" class="w-full h-full object-cover hidden"/>
           <span id="student-profile-initials"></span>
         </button>
-        <button onclick="goRole('role')" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
+        <button onclick="exitStudentOrParent()" class="text-on-surface-variant text-sm flex items-center gap-1 hover:text-primary"><span class="material-symbols-outlined text-base">logout</span>Keluar</button>
       </div>
     </div>
     <nav id="student-nav" class="flex gap-1 px-4 md:px-8 pb-2 overflow-x-auto custom-scrollbar"></nav>
@@ -3390,14 +3399,14 @@ function refreshCurrentView(){
   } else if(activeScreen.id === "screen-parent" && currentStudent){
     // pastikan data siswa yang sedang login masih ada & sinkron
     const fresh = studentById(currentStudent.id);
-    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); goRole("role"); return; }
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent(); return; }
     currentStudent = fresh;
     if(currentParentPage === "dashboard") renderParentDashboard();
     else if(currentParentPage === "kunjungan") renderParentVisits();
     else if(currentParentPage === "izin") renderParentIzin();
   } else if(activeScreen.id === "screen-student" && currentStudent){
     const fresh = studentById(currentStudent.id);
-    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); goRole("role"); return; }
+    if(!fresh){ toast("Data santri ini telah dihapus.", "error"); exitStudentOrParent(); return; }
     currentStudent = fresh;
     updateStudentProfileButton();
     if(currentStudentPage === "dashboard") renderStudentDashboard();
@@ -3447,9 +3456,18 @@ function goRole(role){
     "public-gateway": "screen-public-gateway",
     "public-exit": "screen-public-exit",
     "hafalan": "screen-hafalan",
+    "logged-out": "screen-session-ended",
   };
   document.getElementById(map[role]).classList.add("active");
   if (role === "role") { currentStudent = null; }
+}
+
+/* Keluar untuk siswa/orang tua: TIDAK pernah kembali ke halaman pilihan role (login guru),
+   melainkan ke halaman "sesi berakhir" — ini adalah halaman terakhir sebelum menutup web. */
+function exitStudentOrParent(){
+  currentStudent = null;
+  try { sessionStorage.removeItem("sibestPublicGateway"); } catch(e) {}
+  goRole("logged-out");
 }
 
 /* =========================================================
@@ -8354,8 +8372,8 @@ let hafalanSubmitBusy = false;
 async function submitHafalanReport(){
   if(hafalanSubmitBusy) return;
   hafalanSubmitBusy = true;
-  const submitBtn = document.querySelector('#screen-hafalan button[onclick="submitHafalanReport()"]');
-  if(submitBtn){ submitBtn.disabled = true; submitBtn.classList.add('opacity-60','cursor-not-allowed'); }
+  const submitBtn = document.getElementById('hafalan-submit-btn');
+  if(submitBtn){ submitBtn.disabled = true; submitBtn.classList.add('opacity-60','cursor-not-allowed'); submitBtn.textContent = 'Mengirim...'; }
   try {
     const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=todayISO(), time=nowHHMM(), err=document.getElementById('hafalan-error');
     const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
@@ -8373,7 +8391,7 @@ async function submitHafalanReport(){
     toast('Laporan hafalan berhasil dikirim.'); backToPublicGateway();
   } finally {
     hafalanSubmitBusy = false;
-    if(submitBtn){ submitBtn.disabled = false; submitBtn.classList.remove('opacity-60','cursor-not-allowed'); }
+    if(submitBtn){ submitBtn.disabled = false; submitBtn.classList.remove('opacity-60','cursor-not-allowed'); submitBtn.textContent = 'Kirim Laporan Hafalan'; }
   }
 }
 

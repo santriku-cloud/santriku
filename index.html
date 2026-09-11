@@ -570,7 +570,6 @@ tailwind.config = {
       <div><label class="block text-xs font-semibold text-on-surface-variant mb-1">Sampai Surah</label><input id="hafalan-to-surah" list="surah-list" oninput="updateHafalanAyatLimits()" placeholder="Ketik nama surah" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/><input id="hafalan-to-ayah" type="number" min="1" value="1" class="w-full mt-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" placeholder="Ayat"/></div>
     </div>
     <datalist id="surah-list"></datalist>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3"><div><label class="block text-xs font-semibold text-on-surface-variant mb-1">Tanggal</label><input id="hafalan-date" type="date" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div><div><label class="block text-xs font-semibold text-on-surface-variant mb-1">Waktu</label><input id="hafalan-time" type="time" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div></div>
     <p id="hafalan-error" class="hidden text-error text-xs mt-3"></p>
     <button onclick="submitHafalanReport()" class="w-full mt-4 bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan Hafalan</button>
   </div>
@@ -8332,8 +8331,6 @@ function initHafalanForm(){
   const list=document.getElementById('surah-list'), students=document.getElementById('hafalan-student-list');
   if(list) list.innerHTML=QURAN_SURAHS.map(x=>`<option value="${x.name}">${x.name} — ${x.ayah} ayat</option>`).join('');
   if(students) students.innerHTML=(DB.students||[]).map(x=>`<option value="${escapeHtml(x.name)}"></option>`).join('');
-  const d=new Date(); const date=document.getElementById('hafalan-date'), time=document.getElementById('hafalan-time');
-  if(date) date.value=todayISO(); if(time) time.value=nowHHMM();
   updateHafalanAyatLimits();
 }
 function leavePublicAccess(){
@@ -8360,9 +8357,9 @@ async function submitHafalanReport(){
   const submitBtn = document.querySelector('#screen-hafalan button[onclick="submitHafalanReport()"]');
   if(submitBtn){ submitBtn.disabled = true; submitBtn.classList.add('opacity-60','cursor-not-allowed'); }
   try {
-    const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=document.getElementById('hafalan-date').value, time=document.getElementById('hafalan-time').value, err=document.getElementById('hafalan-error');
+    const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=todayISO(), time=nowHHMM(), err=document.getElementById('hafalan-error');
     const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
-    if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
+    if(!name||!f||!t||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
     const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase());
     let duplicate = false;
     await saveDBFresh(db=>{

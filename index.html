@@ -3220,6 +3220,7 @@ const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 let teacherViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let studentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let parentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let reportViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
 // Saat guru klik "Buat Catatan Pelanggaran" pada sebuah Laporan Santri, id laporan itu disimpan
 // di sini sementara. Kalau guru lalu menekan "+ Catat", catatan pelanggaran yang dibuat akan
 // ditautkan ke laporan tsb (r.violationRecordId) supaya nanti tidak dobel tercatat saat laporan
@@ -3328,7 +3329,57 @@ async function loadDB(){
   await saveDB();
 }
 
+/* =========================================================
+   INDIKATOR SIMPAN GLOBAL
+   Semua tombol yang memiliki label "Simpan" atau "Save" akan
+   menampilkan spinner dan menonaktifkan klik ganda selama proses tulis.
+   ========================================================= */
+const activeSaveButtons = new Set();
+
+function startSaveButton(button){
+  if(!button || button.dataset.saveBusy === "1") return;
+  button.dataset.saveBusy = "1";
+  button.dataset.saveOriginalHtml = button.innerHTML;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.classList.add("is-saving");
+  button.innerHTML = '<span class="material-symbols-outlined text-[18px] animate-spin" aria-hidden="true">progress_activity</span><span>Menyimpan...</span>';
+  activeSaveButtons.add(button);
+  // Jika validasi menghentikan fungsi sebelum saveDB dipanggil, pulihkan tombol.
+  setTimeout(()=>{
+    if(button.dataset.saveBusy === "1" && button.dataset.saveInFlight !== "1") finishSaveButton(button);
+  }, 1200);
+}
+
+function finishSaveButton(button){
+  if(!button || button.dataset.saveBusy !== "1") return;
+  button.innerHTML = button.dataset.saveOriginalHtml || "Simpan";
+  button.disabled = false;
+  button.removeAttribute("aria-busy");
+  button.classList.remove("is-saving");
+  delete button.dataset.saveBusy;
+  delete button.dataset.saveInFlight;
+  delete button.dataset.saveOriginalHtml;
+  activeSaveButtons.delete(button);
+}
+
+function markSaveButtonsInFlight(){
+  activeSaveButtons.forEach(button=>{ button.dataset.saveInFlight = "1"; });
+}
+
+function finishAllSaveButtons(){
+  [...activeSaveButtons].forEach(finishSaveButton);
+}
+
+document.addEventListener("click", event=>{
+  const button = event.target.closest("button");
+  if(!button || button.disabled) return;
+  const label = (button.innerText || button.textContent || "").replace(/\s+/g, " ").trim();
+  if(/\b(simpan|save)\b/i.test(label)) startSaveButton(button);
+}, true);
+
 async function saveDB(){
+  markSaveButtonsInFlight();
   try {
     await window.fb.set(window.fb.ref(window.fb.db, "edusyncData"), {
       json: JSON.stringify(DB),
@@ -3337,6 +3388,8 @@ async function saveDB(){
   } catch(e) {
     console.error("Gagal menyimpan data:", e);
     toast("Gagal menyimpan data. Coba lagi.", "error");
+  } finally {
+    finishAllSaveButtons();
   }
 }
 
@@ -3346,6 +3399,7 @@ async function saveDB(){
 // tertimpa balik oleh sesi lain yang menyimpan memakai data lama (bug: data terhapus muncul lagi
 // setelah refresh). Dipakai khusus untuk aksi yang rawan tabrakan antar perangkat/tab.
 async function saveDBFresh(mutator){
+  markSaveButtonsInFlight();
   try {
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "edusyncData"));
     let fresh = DB;
@@ -3358,6 +3412,8 @@ async function saveDBFresh(mutator){
   } catch(e) {
     console.error("Gagal menyimpan data (fresh):", e);
     toast("Gagal menyimpan data. Coba lagi.", "error");
+  } finally {
+    finishAllSaveButtons();
   }
 }
 
@@ -4222,6 +4278,7 @@ function applyViolationFilter(prefix){
   if(prefix==="teacher"){ teacherViolationFilter = f; renderTeacherLogViolationList(); }
   else if(prefix==="student"){ studentViolationFilter = f; renderStudentViolationList(); }
   else if(prefix==="parent"){ parentViolationFilter = f; renderParentViolationList(); }
+  else if(prefix==="report"){ reportViolationFilter = f; renderTeacherReports(); }
 }
 
 function resetViolationFilter(prefix){
@@ -4229,6 +4286,7 @@ function resetViolationFilter(prefix){
   if(prefix==="teacher"){ teacherViolationFilter = empty; renderTeacherLogViolation(); }
   else if(prefix==="student"){ studentViolationFilter = empty; renderStudentDashboard(); }
   else if(prefix==="parent"){ parentViolationFilter = empty; renderParentDashboard(); }
+  else if(prefix==="report"){ reportViolationFilter = empty; renderTeacherReports(); }
 }
 
 function durationDays(startIso, endIso){
@@ -6686,7 +6744,9 @@ function closeMediaLightbox(){
 
 function renderTeacherReports(){
   const el = document.getElementById("teacher-content");
-  const violationList = [...(DB.violationReports || [])].sort((a,b)=>
+  const violationList = [...(DB.violationReports || [])]
+    .filter(r=>violationMatchesFilter(r, reportViolationFilter))
+    .sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
   const hafalanList = [...(DB.hafalanReports || [])].sort((a,b)=>
@@ -6763,6 +6823,9 @@ function renderTeacherReports(){
       <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3">
         <div><h4 class="font-display font-bold">Laporan Pelanggaran</h4><p class="text-xs text-on-surface-variant mt-1">Laporan rahasia yang masuk melalui Barcode Umum SIBEST.</p></div>
         <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full whitespace-nowrap">${violationList.length} laporan</span>
+      </div>
+      <div class="px-5 pt-3">
+        ${violationFilterBar("report", reportViolationFilter)}
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-xs">

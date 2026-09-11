@@ -329,8 +329,8 @@ tailwind.config = {
 </div>
 
 <!-- ============ ID CARD MODAL (Kartu Siswa) ============ -->
-<div id="id-card-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeIdCardModal()">
-  <div class="relative w-full max-w-xs fade-in">
+<div id="id-card-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4 py-6 overflow-y-auto" onclick="if(event.target===this) closeIdCardModal()">
+  <div class="relative w-full max-w-xs fade-in my-auto">
     <button onclick="closeIdCardModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
       <span class="material-symbols-outlined text-on-surface block">close</span>
     </button>
@@ -356,7 +356,7 @@ tailwind.config = {
       </div>
     </div>
 
-    <!-- Photo action menu (Edit / Hapus) -->
+    <!-- Menu aksi akun (Edit Foto / Hapus Foto / Edit Data) -->
     <div id="id-card-photo-menu" class="hidden absolute left-1/2 -translate-x-1/2 top-[7.5rem] z-20 w-48 bg-surface-container-lowest rounded-xl shadow-2xl border border-outline-variant overflow-hidden fade-in">
       <label id="id-card-photo-label" class="flex items-center gap-2 px-4 py-3 text-sm font-medium text-on-surface hover:bg-surface-container cursor-pointer">
         <span class="material-symbols-outlined text-[20px] text-primary">edit</span>Edit Foto
@@ -365,11 +365,8 @@ tailwind.config = {
       <button id="id-card-photo-delete-btn" onclick="removeIdCardPhoto()" class="w-full flex items-center gap-2 px-4 py-3 text-sm font-medium text-error hover:bg-surface-container text-left border-t border-outline-variant">
         <span class="material-symbols-outlined text-[20px]">delete</span>Hapus Foto
       </button>
-    </div>
-
-    <div id="id-card-edit-data-row" class="hidden mt-4">
-      <button onclick="openStudentEditDataModal()" class="w-full flex items-center justify-center gap-2 bg-secondary-container text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all">
-        <span class="material-symbols-outlined text-[18px]">manage_accounts</span>Edit Data
+      <button id="id-card-edit-data-btn" onclick="hideIdCardPhotoMenu(); openStudentEditDataModal();" class="hidden w-full items-center gap-2 px-4 py-3 text-sm font-medium text-on-surface hover:bg-surface-container text-left border-t border-outline-variant">
+        <span class="material-symbols-outlined text-[20px] text-secondary">manage_accounts</span>Edit Data
       </button>
     </div>
 
@@ -402,7 +399,6 @@ tailwind.config = {
         <div>
           <label class="text-xs font-semibold text-on-surface-variant">Kode Siswa</label>
           <textarea id="student-edit-data-code" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
-          <p class="text-[10px] text-on-surface-variant mt-1">Dipakai bareng Nama Lengkap untuk masuk. Ubah di sini otomatis ikut berubah di data guru.</p>
         </div>
         <div>
           <label class="text-xs font-semibold text-on-surface-variant">NIK</label>
@@ -4370,8 +4366,11 @@ function openIdCardModal({ studentId, name, kelas, code, url, photo, filename, e
   hint.classList.toggle("flex", canEdit);
   const deleteBtn = document.getElementById("id-card-photo-delete-btn");
   deleteBtn.classList.toggle("hidden", !photo);
-  const editDataRow = document.getElementById("id-card-edit-data-row");
-  editDataRow.classList.toggle("hidden", !(selfEditable && studentId));
+  const editDataBtn = document.getElementById("id-card-edit-data-btn");
+  const canEditData = !!(selfEditable && studentId);
+  editDataBtn.classList.toggle("hidden", !canEditData);
+  editDataBtn.classList.toggle("flex", canEditData);
+  modal.dataset.selfEditable = canEditData ? "1" : "0";
   hideIdCardPhotoMenu();
   modal.classList.remove("hidden");
   modal.classList.add("flex");
@@ -4380,7 +4379,7 @@ function openIdCardModal({ studentId, name, kelas, code, url, photo, filename, e
 function toggleIdCardPhotoMenu(event){
   event.stopPropagation();
   const modal = document.getElementById("id-card-modal");
-  if(modal.dataset.editable !== "1") return;
+  if(modal.dataset.editable !== "1" && modal.dataset.selfEditable !== "1") return;
   const menu = document.getElementById("id-card-photo-menu");
   menu.classList.toggle("hidden");
 }

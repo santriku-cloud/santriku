@@ -407,6 +407,15 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ PUBLIC EXIT ============ -->
+<div id="screen-public-exit" class="screen min-h-screen w-full flex-col items-center justify-center px-6 bg-surface-container-low">
+  <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-8 w-full max-w-sm text-center">
+    <div class="w-14 h-14 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container mx-auto mb-4"><span class="material-symbols-outlined text-2xl">check_circle</span></div>
+    <h2 class="font-display text-xl font-bold mb-2">Terima kasih</h2>
+    <p class="text-sm text-on-surface-variant">Sesi layanan sudah selesai. Silakan tutup halaman ini.</p>
+  </div>
+</div>
+
 <!-- ============ BARCODE UMUM / PILIHAN AKSES ============ -->
 <div id="screen-public-gateway" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10 bg-surface-container-low">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-6 w-full max-w-md fade-in">
@@ -418,14 +427,14 @@ tailwind.config = {
       <button onclick="openPublicViolationReport()" class="w-full text-left p-4 rounded-xl border border-outline-variant hover:border-primary hover:bg-primary-container/30 transition"><b class="block">Laporan Pelanggaran</b><span class="text-xs text-on-surface-variant">Laporkan pelanggaran secara rahasia.</span></button>
       <button onclick="openPublicHafalan()" class="w-full text-left p-4 rounded-xl border border-outline-variant hover:border-primary hover:bg-primary-container/30 transition"><b class="block">Laporan Hafalan</b><span class="text-xs text-on-surface-variant">Kirim capaian hafalan Al-Qur'an.</span></button>
     </div>
-    <button onclick="goRole('role')" class="w-full mt-5 text-sm text-on-surface-variant hover:text-primary">Kembali ke Beranda</button>
+    <button onclick="leavePublicAccess()" class="w-full mt-5 text-sm text-on-surface-variant hover:text-primary">Kembali ke Beranda</button>
   </div>
 </div>
 
 <!-- ============ LAPORAN HAFALAN ============ -->
 <div id="screen-hafalan" class="screen min-h-screen w-full flex-col items-center justify-center px-6 py-10 bg-surface-container-low">
   <div class="bg-surface-container-lowest rounded-2xl shadow-lg border border-outline-variant p-6 w-full max-w-md fade-in">
-    <button onclick="goRole('public-gateway')" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
+    <button onclick="leavePublicAccess()" class="text-on-surface-variant text-sm flex items-center gap-1 mb-4 hover:text-primary"><span class="material-symbols-outlined text-base">arrow_back</span>Kembali</button>
     <div class="w-12 h-12 rounded-xl bg-secondary-container flex items-center justify-center text-secondary mb-4"><span class="material-symbols-outlined">menu_book</span></div>
     <h2 class="font-display text-xl font-bold mb-1">Laporan Hafalan</h2>
     <p class="text-sm text-on-surface-variant mb-5">Pilih nama surah atau ketik beberapa huruf. Tanggal dan waktu mengikuti perangkat.</p>
@@ -492,6 +501,7 @@ tailwind.config = {
 
     <button id="report-submit-btn" onclick="submitViolationReport()" class="w-full bg-primary text-on-primary py-3 rounded-lg font-semibold hover:shadow-lg transition-all">Kirim Laporan</button>
     <p id="report-error" class="hidden text-error text-xs mt-2"></p>
+    <button type="button" onclick="leavePublicAccess()" class="w-full mt-3 text-sm text-on-surface-variant hover:text-primary">Selesai dan Keluar</button>
   </div>
 </div>
 
@@ -3296,6 +3306,7 @@ function goRole(role){
     "barcode-invalid": "screen-barcode-invalid",
     "report": "screen-report-violation",
     "public-gateway": "screen-public-gateway",
+    "public-exit": "screen-public-exit",
     "hafalan": "screen-hafalan",
   };
   document.getElementById(map[role]).classList.add("active");
@@ -6295,9 +6306,21 @@ function renderTeacherReports(){
   const list = [...(DB.violationReports || [])].sort((a,b)=>
     new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
   );
+  const hafalanList = [...(DB.hafalanReports || [])].sort((a,b)=>
+    new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
+  );
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4 mb-4">
       <p class="text-xs text-on-surface-variant">Laporan yang masuk lewat QR "Lapor Pelanggaran Teman". Nama pelapor hanya ditampilkan di sini untuk guru/admin — mohon jaga kerahasiaannya supaya santri tetap berani melapor.</p>
+    </div>
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-4 mb-4">
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div><h3 class="font-display font-bold">Laporan Hafalan</h3><p class="text-xs text-on-surface-variant">Laporan yang dikirim melalui Barcode Umum SIBEST.</p></div>
+        <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full">${hafalanList.length} laporan</span>
+      </div>
+      <div class="divide-y divide-outline-variant">
+        ${hafalanList.map(r=>`<div class="py-3 flex items-start justify-between gap-3 flex-wrap"><div><p class="font-semibold text-sm">${escapeHtml(r.studentName||"-")}</p><p class="text-xs text-on-surface-variant">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"} sampai ${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</p><p class="text-xs text-on-surface-variant mt-1">${formatDate(r.date)} • ${escapeHtml(r.time||"-")}</p></div><span class="text-xs font-semibold bg-primary-container text-on-primary-container px-2 py-1 rounded-full">Hafalan</span></div>`).join("") || `<p class="py-4 text-center text-sm text-on-surface-variant">Belum ada laporan hafalan.</p>`}
+      </div>
     </div>
     <div class="space-y-3">
       ${list.map(r=>{
@@ -7880,6 +7903,11 @@ function initHafalanForm(){
   if(date) date.value=todayISO(); if(time) time.value=nowHHMM();
   updateHafalanAyatLimits();
 }
+function leavePublicAccess(){
+  // Hapus hash barcode agar tombol kembali/refresh tidak menampilkan gerbang publik lagi.
+  try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch(e) { window.location.hash = ""; }
+  goRole("public-exit");
+}
 function openPublicStudentLogin(){ goRole('student'); }
 function openPublicViolationReport(){ goRole('report'); }
 function openPublicHafalan(){ goRole('hafalan'); initHafalanForm(); }
@@ -7892,7 +7920,7 @@ async function submitHafalanReport(){
   if(!name||!f||!t||!date||!time||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
   const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase());
   await saveDBFresh(db=>{if(!db.hafalanReports)db.hafalanReports=[];db.hafalanReports.push({id:uid('hf'),studentId:student?student.id:null,studentName:name,fromSurah:f.name,fromAyah:fa,toSurah:t.name,toAyah:ta,date,time,createdAt:new Date().toISOString()});});
-  toast('Laporan hafalan berhasil dikirim.'); goRole('public-gateway');
+  toast('Laporan hafalan berhasil dikirim.'); leavePublicAccess();
 }
 
 function handleEntryToken(){

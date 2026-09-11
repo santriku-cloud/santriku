@@ -4516,6 +4516,23 @@ function renderTeacherControl(){
     </div>
 
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-3xl mt-6">
+      <h4 class="font-display font-bold mb-1">Menunggu Persetujuan</h4>
+      <p class="text-xs text-on-surface-variant mb-4">Akun baru yang mendaftar tidak langsung bisa masuk. Setujui di sini dulu supaya guru tersebut bisa login.</p>
+      <div class="overflow-x-auto custom-scrollbar">
+        <table class="w-full text-left text-sm">
+          <thead>
+            <tr class="bg-surface text-on-surface-variant text-xs uppercase">
+              <th class="p-3">Nama</th><th class="p-3">Email</th><th class="p-3">Tgl Daftar</th><th class="p-3"></th>
+            </tr>
+          </thead>
+          <tbody id="control-teacher-pending-body">
+            <tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Memuat...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-3xl mt-6">
       <h4 class="font-display font-bold mb-1">Akun Guru Terdaftar</h4>
       <p class="font-arabic text-l leading-loose text-right mb-2" dir="rtl" lang="ar">مَا مِنْ عَبْدٍ يَسْتَرْعِيْهِ اللَّهُ رَعِيَّةً، يَمُوْتُ يَوْمَ يَمُوْتُ، وَهُوَ غَاشٌّ لِرَعِيَّتِهِ، إِلاَّ حَرَّمَ اللَّهُ عَلَيْهِ الْجَنَّةَ</p>
       <p class="text-xs text-on-surface-variant mb-4 italic">"Tidaklah seorang hamba yang diserahi Allah untuk memimpin rakyat, lalu ia meninggal dunia dalam keadaan curang terhadap rakyatnya, kecuali Allah mengharamkannya masuk surga." (Hadis riwayat Imam al-Bukhari)</p>
@@ -4536,6 +4553,7 @@ function renderTeacherControl(){
   const typeSel = document.getElementById("control-barcode-type");
   if(typeSel) typeSel.value = controlBarcodeType;
   renderControlBarcode();
+  renderPendingTeacherAccountsTable();
   renderTeacherAccountsTable();
 }
 
@@ -4602,13 +4620,59 @@ function escapeHtml(str){
   return String(str==null?"":str).replace(/[&<>"']/g, ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 }
 
+async function renderPendingTeacherAccountsTable(){
+  const body = document.getElementById("control-teacher-pending-body");
+  if(!body) return;
+  try{
+    const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2"));
+    const data = snap.exists() ? snap.val() : {};
+    const rows = Object.entries(data).filter(([,acc])=>acc.status==="pending");
+    if(rows.length===0){
+      body.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Tidak ada pendaftaran yang menunggu persetujuan.</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(([slug, acc])=>{
+      const tgl = acc.createdAt ? new Date(acc.createdAt).toLocaleDateString("id-ID") : "-";
+      return `
+        <tr class="border-t border-outline-variant hover:bg-surface-container-low">
+          <td class="p-3 font-medium">${escapeHtml(acc.name||"-")}</td>
+          <td class="p-3 text-on-surface-variant">${escapeHtml(acc.email||"-")}</td>
+          <td class="p-3 text-on-surface-variant">${tgl}</td>
+          <td class="p-3 text-right whitespace-nowrap">
+            <button onclick="approveTeacherAccount('${slug}')" class="text-primary hover:underline text-xs font-semibold mr-3">Setujui</button>
+            <button onclick="deleteTeacherAccount('${slug}')" class="text-error hover:underline text-xs font-semibold">Tolak</button>
+          </td>
+        </tr>`;
+    }).join("");
+  } catch(e){
+    console.error(e);
+    body.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-error">Gagal memuat data pendaftaran.</td></tr>`;
+  }
+}
+
+async function approveTeacherAccount(slug){
+  try{
+    const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug));
+    if(!snap.exists()){ toast("Akun tidak ditemukan.", "error"); return; }
+    const acc = snap.val();
+    const { status, ...rest } = acc;
+    await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), rest);
+    toast(`Akun ${acc.name} disetujui. Sekarang bisa dipakai untuk masuk.`);
+    renderPendingTeacherAccountsTable();
+    renderTeacherAccountsTable();
+  } catch(e){
+    console.error(e);
+    toast("Gagal menyetujui akun.", "error");
+  }
+}
+
 async function renderTeacherAccountsTable(){
   const body = document.getElementById("control-teacher-accounts-body");
   if(!body) return;
   try{
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2"));
     const data = snap.exists() ? snap.val() : {};
-    const rows = Object.entries(data);
+    const rows = Object.entries(data).filter(([,acc])=>acc.status!=="pending");
     if(rows.length===0){
       body.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Belum ada guru yang mendaftar.</td></tr>`;
       return;
@@ -4655,7 +4719,10 @@ async function deleteTeacherAccount(slug){
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug));
     if(!snap.exists()){ toast("Akun tidak ditemukan.", "error"); return; }
     const acc = snap.val();
-    if(!confirm(`Hapus permanen akun guru "${acc.name}"? Email ${acc.email||""} bisa langsung dipakai untuk daftar ulang setelah ini.`)) return;
+    const confirmMsg = acc.status === "pending"
+      ? `Tolak pendaftaran "${acc.name}"? Email ${acc.email||""} bisa langsung dipakai untuk daftar ulang setelah ini.`
+      : `Hapus permanen akun guru "${acc.name}"? Email ${acc.email||""} bisa langsung dipakai untuk daftar ulang setelah ini.`;
+    if(!confirm(confirmMsg)) return;
     await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), null);
     if(acc.email){
       await window.fb.set(window.fb.ref(window.fb.db, "teacherEmailIndexV2/" + sanitizeEmailKey(acc.email)), null);
@@ -4667,7 +4734,8 @@ async function deleteTeacherAccount(slug){
       goRole("role");
       return;
     }
-    toast("Akun guru berhasil dihapus permanen.");
+    toast(acc.status === "pending" ? "Pendaftaran ditolak." : "Akun guru berhasil dihapus permanen.");
+    renderPendingTeacherAccountsTable();
     renderTeacherAccountsTable();
   } catch(e){
     console.error(e);
@@ -7032,10 +7100,13 @@ function switchTeacherAuthTab(tab){
   document.getElementById("teacher-tab-register").className = "flex-1 py-2 rounded-md text-sm font-semibold " + (!isLogin ? "bg-surface-container-lowest shadow-sm" : "text-on-surface-variant");
 }
 
-function showTeacherAuthError(which, msg){
+function showTeacherAuthError(which, msg, isInfo){
   const el = document.getElementById(which === "login" ? "teacher-login-error" : "teacher-register-error");
   el.textContent = msg;
   el.classList.remove("hidden");
+  // isInfo: dipakai untuk pesan netral (mis. "menunggu persetujuan"), bukan pesan error/merah.
+  el.classList.toggle("text-error", !isInfo);
+  el.classList.toggle("text-primary", !!isInfo);
 }
 function hideTeacherAuthError(which){
   document.getElementById(which === "login" ? "teacher-login-error" : "teacher-register-error").classList.add("hidden");
@@ -7099,12 +7170,26 @@ async function teacherRegister(){
 
     const salt = randomSalt();
     const passwordHash = await hashPassword(password, salt);
-    const acc = { name, email, salt, passwordHash, photo: null, createdAt: new Date().toISOString() };
+    // Kalau belum ada guru terdaftar sama sekali, pendaftar pertama otomatis disetujui
+    // (kalau tidak, tidak akan ada siapa pun yang bisa menyetujui pendaftaran ini).
+    const allSnap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2"));
+    const isFirstAccount = !allSnap.exists() || Object.keys(allSnap.val()||{}).length === 0;
+    // status "pending": akun belum bisa dipakai untuk masuk sampai disetujui
+    // oleh salah satu guru yang sudah terdaftar, lewat Menu Kontrol > Akun Guru Terdaftar.
+    const acc = { name, email, salt, passwordHash, photo: null, createdAt: new Date().toISOString(), status: isFirstAccount ? "approved" : "pending" };
     await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), acc);
     await window.fb.set(window.fb.ref(window.fb.db, "teacherEmailIndexV2/" + emailKey), slug);
-    localStorage.setItem("teacherSessionSlug", slug);
-    toast("Pendaftaran berhasil!");
-    enterTeacherApp(acc, slug);
+    if(isFirstAccount){
+      localStorage.setItem("teacherSessionSlug", slug);
+      toast("Pendaftaran berhasil!");
+      enterTeacherApp(acc, slug);
+      return;
+    }
+    showTeacherAuthError("register", "Pendaftaran berhasil! Akun Anda menunggu persetujuan salah satu guru yang sudah terdaftar sebelum bisa dipakai untuk masuk.", true);
+    document.getElementById("teacher-register-email").value = "";
+    document.getElementById("teacher-register-name").value = "";
+    document.getElementById("teacher-register-password").value = "";
+    document.getElementById("teacher-register-password2").value = "";
   } catch(e){
     console.error(e);
     showTeacherAuthError("register", "Terjadi kesalahan. Coba lagi.");
@@ -7129,6 +7214,7 @@ async function teacherLogin(){
     const acc = snap.val();
     const computedHash = await hashPassword(password, acc.salt);
     if(computedHash !== acc.passwordHash){ showTeacherAuthError("login", "Nama atau password salah."); return; }
+    if(acc.status === "pending"){ showTeacherAuthError("login", "Akun Anda belum disetujui. Minta salah satu guru yang sudah terdaftar untuk menyetujui pendaftaran Anda lewat Menu Kontrol."); return; }
     localStorage.setItem("teacherSessionSlug", slug);
     enterTeacherApp(acc, slug);
   } catch(e){
@@ -7152,7 +7238,7 @@ async function restoreTeacherSession(){
   if(!slug) return;
   try{
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug));
-    if(snap.exists()){
+    if(snap.exists() && snap.val().status !== "pending"){
       enterTeacherApp(snap.val(), slug);
     } else {
       localStorage.removeItem("teacherSessionSlug");

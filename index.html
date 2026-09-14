@@ -139,6 +139,21 @@ tailwind.config = {
   </div>
 </div>
 
+<!-- ============ CAMERA VIDEO RECORDER MODAL (rekam video bukti langsung dari browser) ============ -->
+<div id="camera-record-modal" class="hidden fixed inset-0 bg-black z-[999] items-center justify-center">
+  <div class="relative w-full h-full max-w-md mx-auto flex flex-col overflow-hidden">
+    <video id="camera-record-preview" autoplay playsinline muted class="flex-1 w-full h-full object-cover bg-black"></video>
+    <button type="button" onclick="closeCameraRecordModal()" class="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/50 text-white flex items-center justify-center">
+      <span class="material-symbols-outlined">close</span>
+    </button>
+    <div id="camera-record-timer" class="hidden absolute top-4 left-4 px-3 py-1 rounded-full bg-black/50 text-white text-sm font-semibold">00:00</div>
+    <p id="camera-record-error" class="hidden absolute top-1/2 left-4 right-4 -translate-y-1/2 text-white text-sm text-center bg-black/60 rounded-lg p-3"></p>
+    <div class="absolute bottom-0 left-0 right-0 pb-8 pt-10 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-center">
+      <button type="button" id="camera-record-btn" onclick="toggleCameraRecording()" class="w-16 h-16 rounded-full border-4 border-white bg-red-600 flex items-center justify-center transition-all"></button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ MEDIA LIGHTBOX MODAL (perbesar bukti foto/video Laporan Santri) ============ -->
 <div id="media-lightbox-modal" class="hidden fixed inset-0 bg-black/80 z-[999] items-center justify-center px-4" onclick="if(event.target===this) closeMediaLightbox()">
   <div class="relative max-w-2xl w-full">
@@ -663,12 +678,15 @@ tailwind.config = {
         <button type="button" onclick="pickReportMedia('gallery')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors">
           <span class="material-symbols-outlined text-on-surface-variant">photo_library</span> Upload dari Galeri
         </button>
-        <button type="button" onclick="pickReportMedia('camera')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors border-t border-outline-variant">
-          <span class="material-symbols-outlined text-on-surface-variant">photo_camera</span> Ambil dengan Kamera
+        <button type="button" onclick="pickReportMedia('camera-photo')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors border-t border-outline-variant">
+          <span class="material-symbols-outlined text-on-surface-variant">photo_camera</span> Ambil Foto (Kamera)
+        </button>
+        <button type="button" onclick="pickReportMedia('camera-video')" class="w-full flex items-center gap-3 text-left px-3 py-2.5 text-sm hover:bg-surface-container transition-colors border-t border-outline-variant">
+          <span class="material-symbols-outlined text-on-surface-variant">videocam</span> Rekam Video (Kamera)
         </button>
       </div>
       <input id="report-media-input-gallery" type="file" accept="image/*,video/*" multiple onchange="handleReportMediaChange(event)" class="hidden"/>
-      <input id="report-media-input-camera" type="file" accept="image/*,video/*" capture="environment" onchange="handleReportMediaChange(event)" class="hidden"/>
+      <input id="report-media-input-camera-photo" type="file" accept="image/*" capture="environment" onchange="handleReportMediaChange(event)" class="hidden"/>
     </div>
     <div id="report-media-preview" class="hidden flex flex-wrap gap-2 mb-4"></div>
 
@@ -7160,7 +7178,15 @@ function toggleReportMediaMenu(){
 function pickReportMedia(kind){
   const menu = document.getElementById("report-media-menu");
   if(menu) menu.classList.add("hidden");
-  const input = document.getElementById(kind === "camera" ? "report-media-input-camera" : "report-media-input-gallery");
+  if(kind === "camera-video"){
+    if(__reportMediaFiles.length >= MAX_REPORT_MEDIA){
+      toast(`Maksimal ${MAX_REPORT_MEDIA} file bukti.`, "error");
+      return;
+    }
+    openCameraRecordModal();
+    return;
+  }
+  const input = document.getElementById(kind === "camera-photo" ? "report-media-input-camera-photo" : "report-media-input-gallery");
   if(input) input.click();
 }
 
@@ -7178,6 +7204,140 @@ function readFileAsDataUrl(file){
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/* =========================================================
+   Perekam video bukti langsung di dalam browser (bukan lewat aplikasi
+   kamera bawaan HP), supaya rekaman bisa otomatis berhenti begitu
+   ukurannya mencapai batas sistem (MAX_REPORT_VIDEO_BYTES).
+   ========================================================= */
+const MAX_REPORT_VIDEO_BYTES = 15 * 1024 * 1024; // samakan dengan batas video di handleReportMediaChange
+let __cameraStream = null;
+let __cameraRecorder = null;
+let __cameraChunks = [];
+let __cameraChunksSize = 0;
+let __cameraRecording = false;
+let __cameraTimerInterval = null;
+let __cameraStartTime = 0;
+
+async function openCameraRecordModal(){
+  const modal = document.getElementById("camera-record-modal");
+  const errEl = document.getElementById("camera-record-error");
+  errEl.classList.add("hidden");
+  modal.classList.remove("hidden"); modal.classList.add("flex");
+  try{
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+    } catch(errWithAudio){
+      // sebagian perangkat menolak akses mikrofon; coba lagi tanpa audio
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+    }
+    __cameraStream = stream;
+    const video = document.getElementById("camera-record-preview");
+    video.srcObject = __cameraStream;
+  } catch(e){
+    console.error(e);
+    errEl.textContent = "Tidak bisa mengakses kamera. Pastikan izin kamera/mikrofon diaktifkan di browser.";
+    errEl.classList.remove("hidden");
+  }
+}
+
+function teardownCameraModal(){
+  if(__cameraStream){ __cameraStream.getTracks().forEach(t=>t.stop()); __cameraStream = null; }
+  const modal = document.getElementById("camera-record-modal");
+  modal.classList.add("hidden"); modal.classList.remove("flex");
+  const video = document.getElementById("camera-record-preview");
+  if(video) video.srcObject = null;
+  document.getElementById("camera-record-timer").classList.add("hidden");
+  const btn = document.getElementById("camera-record-btn");
+  if(btn) btn.classList.remove("rounded-2xl");
+}
+
+function closeCameraRecordModal(){
+  // Ditutup manual (tombol X): batalkan rekaman yang sedang berjalan, jangan disimpan.
+  if(__cameraRecorder && __cameraRecorder.state !== "inactive"){
+    __cameraRecorder.onstop = null;
+    __cameraRecorder.stop();
+  }
+  __cameraRecording = false;
+  clearInterval(__cameraTimerInterval);
+  teardownCameraModal();
+}
+
+function toggleCameraRecording(){
+  if(__cameraRecording) stopCameraRecording();
+  else startCameraRecording();
+}
+
+function startCameraRecording(){
+  if(!__cameraStream) return;
+  __cameraChunks = [];
+  __cameraChunksSize = 0;
+  let recorder;
+  try{
+    const preferredType = "video/webm";
+    const opts = (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(preferredType)) ? { mimeType: preferredType } : undefined;
+    recorder = opts ? new MediaRecorder(__cameraStream, opts) : new MediaRecorder(__cameraStream);
+  } catch(e){
+    console.error(e);
+    toast("Perangkat/browser ini tidak mendukung perekaman video langsung.", "error");
+    return;
+  }
+  __cameraRecorder = recorder;
+  __cameraRecorder.ondataavailable = (ev)=>{
+    if(ev.data && ev.data.size > 0){
+      __cameraChunks.push(ev.data);
+      __cameraChunksSize += ev.data.size;
+      // Batas ukuran tercapai saat masih merekam -> hentikan otomatis.
+      if(__cameraChunksSize >= MAX_REPORT_VIDEO_BYTES && __cameraRecording){
+        toast(`Batas ukuran video (${Math.round(MAX_REPORT_VIDEO_BYTES/1024/1024)}MB) tercapai, rekaman dihentikan otomatis.`, "error");
+        stopCameraRecording();
+      }
+    }
+  };
+  __cameraRecorder.onstop = async ()=>{
+    const blob = new Blob(__cameraChunks, { type: (__cameraRecorder && __cameraRecorder.mimeType) || "video/webm" });
+    __cameraChunks = [];
+    if(blob.size > 0){
+      try{
+        const dataUrl = await new Promise((resolve, reject)=>{
+          const reader = new FileReader();
+          reader.onload = ()=>resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        __reportMediaFiles.push({ dataUrl, type: "video" });
+        renderReportMediaPreview();
+        toast("Video bukti berhasil direkam.");
+      } catch(e){
+        console.error(e);
+        toast("Gagal memproses video hasil rekaman.", "error");
+      }
+    }
+    teardownCameraModal();
+  };
+  __cameraRecorder.start(1000); // kumpulkan data tiap 1 detik supaya ukuran bisa dicek berkala
+  __cameraRecording = true;
+  __cameraStartTime = Date.now();
+  const btn = document.getElementById("camera-record-btn");
+  if(btn) btn.classList.add("rounded-2xl");
+  const timerEl = document.getElementById("camera-record-timer");
+  timerEl.classList.remove("hidden");
+  __cameraTimerInterval = setInterval(()=>{
+    const secs = Math.floor((Date.now()-__cameraStartTime)/1000);
+    const mm = String(Math.floor(secs/60)).padStart(2,"0");
+    const ss = String(secs%60).padStart(2,"0");
+    timerEl.textContent = `${mm}:${ss}`;
+  }, 500);
+}
+
+function stopCameraRecording(){
+  if(__cameraRecorder && __cameraRecorder.state !== "inactive"){
+    __cameraRecorder.stop();
+  }
+  __cameraRecording = false;
+  clearInterval(__cameraTimerInterval);
 }
 
 async function handleReportMediaChange(e){
@@ -7295,7 +7455,7 @@ function resetViolationReportForm(){
   const descEl = document.getElementById("report-description");
   descEl.value = ""; descEl.style.height = "auto";
   document.getElementById("report-media-input-gallery").value = "";
-  document.getElementById("report-media-input-camera").value = "";
+  document.getElementById("report-media-input-camera-photo").value = "";
   __reportMediaFiles = [];
   renderReportMediaPreview();
 }

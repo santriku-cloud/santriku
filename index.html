@@ -3275,11 +3275,11 @@ let paymentsMoneySearch = ""; // kata kunci pencarian nama siswa di tabel Bulana
 const HARI_OPTIONS = ["Senin","Selasa","Rabu","Kamis","Jumat","Sabtu","Minggu"];
 
 // Filter riwayat pelanggaran (tanggal/bulan/hari/jam) — dipakai di halaman guru, siswa & orang tua
-let teacherViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
-let studentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
-let parentViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
-let reportViolationFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
-let reportHafalanFilter = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let teacherViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let studentViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let parentViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let reportViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let reportHafalanFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
 // Saat guru klik "Buat Catatan Pelanggaran" pada sebuah Laporan Santri, id laporan itu disimpan
 // di sini sementara. Kalau guru lalu menekan "+ Catat", catatan pelanggaran yang dibuat akan
 // ditautkan ke laporan tsb (r.violationRecordId) supaya nanti tidak dobel tercatat saat laporan
@@ -4275,7 +4275,13 @@ function formatDateTimeFull(iso, time){
    Dipakai bersama oleh halaman guru, siswa & orang tua.
    ========================================================= */
 function violationMatchesFilter(r, f){
-  if(f.date && r.date !== f.date) return false;
+  if(f.dateFrom && f.dateTo){
+    if(r.date < f.dateFrom || r.date > f.dateTo) return false;
+  } else if(f.dateFrom){
+    if(r.date !== f.dateFrom) return false;
+  } else if(f.dateTo){
+    if(r.date !== f.dateTo) return false;
+  }
   if(f.month && f.month !== ""){
     const bulan = String(new Date(r.date).getMonth()+1).padStart(2,"0");
     if(bulan !== f.month) return false;
@@ -4293,8 +4299,12 @@ function violationFilterBar(prefix, f){
   return `
   <div class="flex flex-wrap items-end gap-2 p-3 bg-surface-container rounded-lg mb-3">
     <div class="flex flex-col">
-      <label class="text-[10px] text-on-surface-variant mb-1">Tanggal</label>
-      <input id="${prefix}-f-date" type="date" value="${f.date||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
+      <label class="text-[10px] text-on-surface-variant mb-1">Dari Tanggal</label>
+      <input id="${prefix}-f-datefrom" type="date" value="${f.dateFrom||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
+    </div>
+    <div class="flex flex-col">
+      <label class="text-[10px] text-on-surface-variant mb-1">Sampai Tanggal</label>
+      <input id="${prefix}-f-dateto" type="date" value="${f.dateTo||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
     </div>
     <div class="flex flex-col">
       <label class="text-[10px] text-on-surface-variant mb-1">Bulan</label>
@@ -4324,7 +4334,8 @@ function violationFilterBar(prefix, f){
 
 function readViolationFilterInputs(prefix){
   return {
-    date: document.getElementById(`${prefix}-f-date`)?.value || "",
+    dateFrom: document.getElementById(`${prefix}-f-datefrom`)?.value || "",
+    dateTo: document.getElementById(`${prefix}-f-dateto`)?.value || "",
     month: document.getElementById(`${prefix}-f-month`)?.value || "",
     day: document.getElementById(`${prefix}-f-day`)?.value || "",
     timeFrom: document.getElementById(`${prefix}-f-timefrom`)?.value || "",
@@ -4342,7 +4353,7 @@ function applyViolationFilter(prefix){
 }
 
 function resetViolationFilter(prefix){
-  const empty = { date:"", month:"", day:"", timeFrom:"", timeTo:"" };
+  const empty = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
   if(prefix==="teacher"){ teacherViolationFilter = empty; renderTeacherLogViolation(); }
   else if(prefix==="student"){ studentViolationFilter = empty; renderStudentDashboard(); }
   else if(prefix==="parent"){ parentViolationFilter = empty; renderParentDashboard(); }

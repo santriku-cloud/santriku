@@ -149,7 +149,12 @@ tailwind.config = {
     <div id="camera-record-timer" class="hidden absolute top-4 left-4 px-3 py-1 rounded-full bg-black/50 text-white text-sm font-semibold">00:00</div>
     <p id="camera-record-error" class="hidden absolute top-1/2 left-4 right-4 -translate-y-1/2 text-white text-sm text-center bg-black/60 rounded-lg p-3"></p>
     <div class="absolute bottom-0 left-0 right-0 pb-8 pt-10 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-center">
-      <button type="button" id="camera-record-btn" onclick="toggleCameraRecording()" class="w-16 h-16 rounded-full border-4 border-white bg-red-600 flex items-center justify-center transition-all"></button>
+      <button type="button" id="camera-record-btn" onclick="toggleCameraRecording()" class="w-16 h-16 rounded-full border-4 border-white flex items-center justify-center transition-all">
+        <span id="camera-record-btn-inner" class="w-full h-full rounded-full bg-red-600 transition-all duration-300 ease-in-out"></span>
+      </button>
+      <button type="button" id="camera-switch-btn" onclick="switchCameraFacing()" class="absolute right-8 w-11 h-11 rounded-full bg-black/40 text-white flex items-center justify-center transition-opacity">
+        <span class="material-symbols-outlined text-2xl">cameraswitch</span>
+      </button>
     </div>
   </div>
 </div>
@@ -7394,19 +7399,21 @@ let __cameraChunksSize = 0;
 let __cameraRecording = false;
 let __cameraTimerInterval = null;
 let __cameraStartTime = 0;
+let __cameraFacingMode = "environment"; // "environment" = kamera belakang, "user" = kamera depan
 
 async function openCameraRecordModal(){
   const modal = document.getElementById("camera-record-modal");
   const errEl = document.getElementById("camera-record-error");
   errEl.classList.add("hidden");
   modal.classList.remove("hidden"); modal.classList.add("flex");
+  __cameraFacingMode = "environment";
   try{
     let stream;
     try{
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: __cameraFacingMode }, audio: true });
     } catch(errWithAudio){
       // sebagian perangkat menolak akses mikrofon; coba lagi tanpa audio
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: __cameraFacingMode }, audio: false });
     }
     __cameraStream = stream;
     const video = document.getElementById("camera-record-preview");
@@ -7414,6 +7421,31 @@ async function openCameraRecordModal(){
   } catch(e){
     console.error(e);
     errEl.textContent = "Tidak bisa mengakses kamera. Pastikan izin kamera/mikrofon diaktifkan di browser.";
+    errEl.classList.remove("hidden");
+  }
+}
+
+// Tukar antara kamera depan & belakang. Dinonaktifkan saat sedang merekam
+// supaya rekaman yang berjalan tidak terputus/rusak.
+async function switchCameraFacing(){
+  if(__cameraRecording){ toast("Tidak bisa ganti kamera saat sedang merekam.", "error"); return; }
+  const errEl = document.getElementById("camera-record-error");
+  errEl.classList.add("hidden");
+  __cameraFacingMode = (__cameraFacingMode === "environment") ? "user" : "environment";
+  if(__cameraStream){ __cameraStream.getTracks().forEach(t=>t.stop()); }
+  try{
+    let stream;
+    try{
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: __cameraFacingMode }, audio: true });
+    } catch(errWithAudio){
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: __cameraFacingMode }, audio: false });
+    }
+    __cameraStream = stream;
+    const video = document.getElementById("camera-record-preview");
+    video.srcObject = __cameraStream;
+  } catch(e){
+    console.error(e);
+    errEl.textContent = "Tidak bisa mengganti kamera. Pastikan perangkat memiliki kamera depan/belakang.";
     errEl.classList.remove("hidden");
   }
 }
@@ -7427,6 +7459,10 @@ function teardownCameraModal(){
   document.getElementById("camera-record-timer").classList.add("hidden");
   const btn = document.getElementById("camera-record-btn");
   if(btn) btn.classList.remove("rounded-2xl");
+  const inner = document.getElementById("camera-record-btn-inner");
+  if(inner){ inner.classList.remove("scale-50", "rounded-lg", "animate-pulse"); inner.classList.add("rounded-full"); }
+  const switchBtn = document.getElementById("camera-switch-btn");
+  if(switchBtn){ switchBtn.classList.remove("opacity-0", "pointer-events-none"); }
 }
 
 function closeCameraRecordModal(){
@@ -7497,6 +7533,10 @@ function startCameraRecording(){
   __cameraStartTime = Date.now();
   const btn = document.getElementById("camera-record-btn");
   if(btn) btn.classList.add("rounded-2xl");
+  const inner = document.getElementById("camera-record-btn-inner");
+  if(inner){ inner.classList.remove("rounded-full"); inner.classList.add("scale-50", "rounded-lg", "animate-pulse"); }
+  const switchBtn = document.getElementById("camera-switch-btn");
+  if(switchBtn){ switchBtn.classList.add("opacity-0", "pointer-events-none"); }
   const timerEl = document.getElementById("camera-record-timer");
   timerEl.classList.remove("hidden");
   __cameraTimerInterval = setInterval(()=>{
@@ -7882,7 +7922,7 @@ async function teacherLogin(){
     const acc = snap.val();
     const computedHash = await hashPassword(password, acc.salt);
     if(computedHash !== acc.passwordHash){ showTeacherAuthError("login", "Nama atau password salah."); return; }
-    if(acc.status === "pending"){ showTeacherAuthError("login", "Akun Anda belum disetujui. Minta salah satu guru yang sudah terdaftar untuk menyetujui pendaftaran Anda lewat Menu Kontrol."); return; }
+    if(acc.status === "pending"){ showTeacherAuthError("login", "Akun Anda belum disetujui. Minta salah satu guru yang sudah terdaftar untuk menyetujui pendaftaran Anda lewat Kontrol."); return; }
     localStorage.setItem("teacherSessionSlug", slug);
     enterTeacherApp(acc, slug);
   } catch(e){
@@ -8203,7 +8243,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "visits", icon: "calendar_month", label: "Jadwal Kunjungan" },
   { id: "izin", icon: "assignment_turned_in", label: "Perizinan Santri" },
   { id: "laporan", icon: "summarize", label: "Laporan" },
-  { id: "control", icon: "qr_code_2", label: "Menu Kontrol" },
+  { id: "control", icon: "qr_code_2", label: "Kontrol" },
 ];
 
 // Dipakai baik oleh navigasi manual (teacherGo) maupun oleh sinkronisasi real-time
@@ -8274,7 +8314,7 @@ function teacherGo(page){
   if(page !== "log-violation") pendingLogReportId = null;
   setActiveNav(page);
   closeTeacherMobileNav();
-  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Menu Kontrol" };
+  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Kontrol" };
   document.getElementById("teacher-page-title").textContent = titles[page];
   TEACHER_RENDERERS[page]();
 }

@@ -6076,7 +6076,7 @@ function renderTeacherStudents(){
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
-              <th class="p-4">Nama</th><th class="p-4">NIK</th><th class="p-4">Kode</th><th class="p-4">Kelas</th><th class="p-4">Email Orang Tua</th><th class="p-4">No. WA Orang Tua</th><th class="p-4">Total Poin</th><th class="p-4"></th>
+              <th class="p-4 whitespace-nowrap">Nama</th><th class="p-4 whitespace-nowrap">NIK</th><th class="p-4 whitespace-nowrap">Kode</th><th class="p-4 whitespace-nowrap">Kelas</th><th class="p-4 whitespace-nowrap">Email Orang Tua</th><th class="p-4 whitespace-nowrap">No. WA Orang Tua</th><th class="p-4 whitespace-nowrap">Total Poin</th><th class="p-4"></th>
             </tr>
           </thead>
           <tbody>
@@ -6086,9 +6086,9 @@ function renderTeacherStudents(){
                 <td class="p-4 text-on-surface-variant">${s.nik}</td>
                 <td class="p-4 text-on-surface-variant">${s.code}</td>
                 <td class="p-4 text-on-surface-variant">${s.kelas||"-"}</td>
-                <td class="p-4 text-on-surface-variant">${s.parentEmail||"-"}</td>
-                <td class="p-4 text-on-surface-variant">${s.parentPhone||"-"}</td>
-                <td class="p-4"><span class="px-2 py-1 rounded-full text-xs font-semibold ${totalPoints(s.id)>0?'bg-error-container text-on-error-container':'bg-secondary-container/40 text-on-secondary-container'}">${totalPoints(s.id)} pts</span></td>
+                <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.parentEmail||"-"}</td>
+                <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.parentPhone||"-"}</td>
+                <td class="p-4 whitespace-nowrap"><span class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${totalPoints(s.id)>0?'bg-error-container text-on-error-container':'bg-secondary-container/40 text-on-secondary-container'}">${totalPoints(s.id)} pts</span></td>
                 <td class="p-4 text-right whitespace-nowrap">
                   <button onclick="showStudentBarcode('${s.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Barcode</button>
                   <button onclick="openEditStudentModal('${s.id}')" class="text-secondary hover:underline text-xs font-semibold mr-3">Edit</button>

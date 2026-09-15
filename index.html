@@ -6091,7 +6091,7 @@ function renderTeacherStudents(){
                 <td class="p-4 whitespace-nowrap"><span class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${totalPoints(s.id)>0?'bg-error-container text-on-error-container':'bg-secondary-container/40 text-on-secondary-container'}">${totalPoints(s.id)} pts</span></td>
                 <td class="p-4 text-right whitespace-nowrap">
                   <button onclick="showStudentBarcode('${s.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Barcode</button>
-                  <button onclick="openEditStudentModal('${s.id}')" class="text-secondary hover:underline text-xs font-semibold mr-3">Edit</button>
+                  <button onclick="openEditStudentModal('${s.id}')" class="text-blue-600 hover:underline text-xs font-semibold mr-3">Edit</button>
                   <button onclick="deleteStudent('${s.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
                 </td>
               </tr>`).join("")}
@@ -6802,7 +6802,7 @@ function renderTeacherViolationTypes(){
             </div>
             <div class="flex items-center gap-3 shrink-0">
               <span class="text-xs font-semibold bg-tertiary-fixed text-on-tertiary-fixed px-3 py-1 rounded-full">${t.points} pts</span>
-              <button onclick="openEditViolationTypeModal('${t.id}')" class="text-primary hover:underline text-xs font-semibold">Edit</button>
+              <button onclick="openEditViolationTypeModal('${t.id}')" class="text-blue-600 hover:underline text-xs font-semibold">Edit</button>
               <button onclick="deleteViolationType('${t.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
             </div>
           </div>`).join("")}
@@ -8306,7 +8306,7 @@ function renderTeacherVisits(){
                 <button onclick="setVisitStatus('${v.id}','approved')" class="text-xs font-semibold text-secondary hover:underline">Setujui</button>
                 <button onclick="setVisitStatus('${v.id}','rejected')" class="text-xs font-semibold text-error hover:underline">Tolak</button>
               ` : ""}
-              <button onclick="deleteVisit('${v.id}')" class="text-xs font-semibold text-on-surface-variant hover:underline">Hapus</button>
+              <button onclick="deleteVisit('${v.id}')" class="text-xs font-semibold text-error hover:underline">Hapus</button>
             </div>
           </div>`;
         }).join("")}
@@ -8344,8 +8344,8 @@ function renderTeacherIzin(){
         ${r.status==="approved" ? `
           <button onclick="openSuratIzinModal('${r.id}')" class="text-primary hover:underline text-xs font-semibold mr-3">Cetak Surat</button>
         ` : ""}
-        <button onclick="openEditIzinModal('${r.id}')" class="text-secondary hover:underline text-xs font-semibold mr-3">Edit</button>
-        <button onclick="deleteIzin('${r.id}')" class="text-on-surface-variant hover:underline text-xs font-semibold">Hapus</button>
+        <button onclick="openEditIzinModal('${r.id}')" class="text-blue-600 hover:underline text-xs font-semibold mr-3">Edit</button>
+        <button onclick="deleteIzin('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
       </td>
     </tr>`;
   };

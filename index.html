@@ -424,15 +424,15 @@ tailwind.config = {
         <div class="w-3 h-3 border-t-2 border-r-2 border-white rotate-45"></div>
       </div>
       <div class="relative">
-        <button id="id-card-photo-btn" onclick="toggleIdCardPhotoMenu(event)" type="button" class="relative mx-auto block w-28 h-28 rounded-full ring-4 ring-white bg-white overflow-hidden flex items-center justify-center shadow-lg group">
+        <button id="id-card-photo-btn" onclick="toggleIdCardPhotoMenu(event)" type="button" class="relative mx-auto block w-28 h-28 rounded-full ring-4 ring-white bg-white overflow-hidden flex items-center justify-center shadow-lg group" style="display:flex;align-items:center;justify-content:center;line-height:0;">
           <img id="id-card-photo" src="" class="w-full h-full object-cover hidden"/>
-          <span id="id-card-initials" class="font-display font-extrabold text-3xl text-primary"></span>
+          <span id="id-card-initials" class="font-display font-extrabold text-3xl text-primary" style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;line-height:1;text-align:center;"></span>
           <span id="id-card-photo-edit-hint" class="hidden absolute inset-0 bg-black/40 items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
             <span class="material-symbols-outlined">photo_camera</span>
           </span>
         </button>
         <h3 id="id-card-name" class="font-display font-extrabold text-xl text-white mt-4 leading-tight"></h3>
-        <span id="id-card-class" class="inline-flex items-center justify-center align-middle mt-2 bg-white/25 text-white text-xs font-bold rounded-full tracking-wide px-3 whitespace-nowrap" style="height:26px; line-height:1; vertical-align:middle; box-sizing:border-box;"></span>
+        <span id="id-card-class" class="inline-flex items-center justify-center align-middle mt-2 bg-white/25 text-white text-xs font-bold rounded-full tracking-wide px-3 whitespace-nowrap" style="display:inline-flex;align-items:center;justify-content:center;height:26px;line-height:26px;vertical-align:middle;box-sizing:border-box;text-align:center;"></span>
         <p id="id-card-id" class="text-white/90 text-xs font-semibold mt-4 tracking-widest"></p>
         <div class="bg-white rounded-xl p-3 mt-3 mx-auto w-fit shadow-inner" id="id-card-qr"></div>
       </div>
@@ -4753,12 +4753,29 @@ async function downloadIdCard(){
   try{
     if(document.fonts && document.fonts.ready){ await document.fonts.ready; }
   }catch(e){}
+  // html2canvas dapat menghitung baseline flex/text sedikit berbeda dari browser.
+  // Pakai ukuran eksplisit hanya selama capture agar baris kelas dan inisial
+  // tetap berada di posisi yang sama seperti kartu yang terlihat di layar.
+  node.classList.add("id-card-export-mode");
+  const initials = document.getElementById("id-card-initials");
+  const classBadge = document.getElementById("id-card-class");
+  const oldStyles = {
+    initials: initials ? initials.getAttribute("style") : null,
+    classBadge: classBadge ? classBadge.getAttribute("style") : null,
+  };
+  if(initials) initials.style.cssText += ";display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;height:100%!important;line-height:1!important;text-align:center!important;";
+  if(classBadge) classBadge.style.cssText += ";display:inline-flex!important;align-items:center!important;justify-content:center!important;height:26px!important;line-height:26px!important;vertical-align:middle!important;text-align:center!important;";
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
   html2canvas(node, { scale: 3, backgroundColor: null, useCORS: true }).then(canvas=>{
     const a = document.createElement("a");
     a.download = `${filename}.png`;
     a.href = canvas.toDataURL("image/png");
     a.click();
-  }).catch(()=> toast("Gagal mengunduh kartu.", "error"));
+  }).catch(()=> toast("Gagal mengunduh kartu.", "error")).finally(()=>{
+    node.classList.remove("id-card-export-mode");
+    if(initials){ if(oldStyles.initials === null) initials.removeAttribute("style"); else initials.setAttribute("style", oldStyles.initials); }
+    if(classBadge){ if(oldStyles.classBadge === null) classBadge.removeAttribute("style"); else classBadge.setAttribute("style", oldStyles.classBadge); }
+  });
 }
 
 function onIdCardPhotoSelected(event){

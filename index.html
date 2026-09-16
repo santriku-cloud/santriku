@@ -6090,7 +6090,7 @@ function renderTeacherStudents(){
                 <td class="p-4 font-medium whitespace-nowrap">${s.name}</td>
                 <td class="p-4 text-on-surface-variant">${s.nik}</td>
                 <td class="p-4 text-on-surface-variant">${s.code}</td>
-                <td class="p-4 text-on-surface-variant">${s.kelas||"-"}</td>
+                <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.kelas||"-"}</td>
                 <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.parentEmail||"-"}</td>
                 <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.parentPhone||"-"}</td>
                 <td class="p-4 whitespace-nowrap"><span class="px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${totalPoints(s.id)>0?'bg-error-container text-on-error-container':'bg-secondary-container/40 text-on-secondary-container'}">${totalPoints(s.id)} pts</span></td>

@@ -4776,10 +4776,10 @@ async function downloadIdCard(){
       const clonedInitials = clonedDoc.getElementById("id-card-initials");
       const clonedClass = clonedDoc.getElementById("id-card-class");
       if(clonedInitials){
-        clonedInitials.style.cssText += ";position:absolute!important;inset:0!important;width:112px!important;height:112px!important;display:block!important;line-height:112px!important;text-align:center!important;vertical-align:middle!important;";
+        clonedInitials.style.cssText += ";position:absolute!important;inset:0!important;width:112px!important;height:112px!important;display:block!important;line-height:106px!important;text-align:center!important;vertical-align:middle!important;transform:translateY(-1px)!important;";
       }
       if(clonedClass){
-        clonedClass.style.cssText += ";display:inline-block!important;height:26px!important;line-height:26px!important;padding-top:0!important;padding-bottom:0!important;vertical-align:top!important;text-align:center!important;";
+        clonedClass.style.cssText += ";display:inline-block!important;height:26px!important;line-height:22px!important;padding-top:0!important;padding-bottom:0!important;vertical-align:top!important;text-align:center!important;transform:translateY(-2px)!important;";
       }
     }
   }).then(canvas=>{

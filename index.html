@@ -4766,7 +4766,23 @@ async function downloadIdCard(){
   if(initials) initials.style.cssText += ";display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;height:100%!important;line-height:1!important;text-align:center!important;";
   if(classBadge) classBadge.style.cssText += ";display:inline-flex!important;align-items:center!important;justify-content:center!important;height:26px!important;line-height:26px!important;vertical-align:middle!important;text-align:center!important;";
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  html2canvas(node, { scale: 3, backgroundColor: null, useCORS: true }).then(canvas=>{
+  html2canvas(node, {
+    scale: 3,
+    backgroundColor: null,
+    useCORS: true,
+    // Atur ulang elemen di clone html2canvas. Flexbox/line-height Tailwind
+    // kadang dihitung berbeda oleh renderer canvas dibanding browser.
+    onclone: clonedDoc=>{
+      const clonedInitials = clonedDoc.getElementById("id-card-initials");
+      const clonedClass = clonedDoc.getElementById("id-card-class");
+      if(clonedInitials){
+        clonedInitials.style.cssText += ";position:absolute!important;inset:0!important;width:112px!important;height:112px!important;display:block!important;line-height:112px!important;text-align:center!important;vertical-align:middle!important;";
+      }
+      if(clonedClass){
+        clonedClass.style.cssText += ";display:inline-block!important;height:26px!important;line-height:26px!important;padding-top:0!important;padding-bottom:0!important;vertical-align:top!important;text-align:center!important;";
+      }
+    }
+  }).then(canvas=>{
     const a = document.createElement("a");
     a.download = `${filename}.png`;
     a.href = canvas.toDataURL("image/png");

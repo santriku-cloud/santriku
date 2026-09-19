@@ -8432,6 +8432,89 @@ async function copySchoolAIPrompt(){
   }
 }
 
+
+/* ===== Konteks data untuk AI (hafalan) ===== */
+function aiAyahIndex(surahName, ayah){
+  let idx = 0;
+  const target = String(surahName||"").trim().toLowerCase();
+  for(const s of QURAN_SURAHS){
+    if(s.name.toLowerCase() === target) return idx + (Number(ayah)||0);
+    idx += s.ayah;
+  }
+  return null;
+}
+function aiHafalanAyatCount(r){
+  const a = aiAyahIndex(r.fromSurah, r.fromAyah), b = aiAyahIndex(r.toSurah, r.toAyah);
+  if(a == null || b == null) return 0;
+  return Math.abs(b - a) + 1;
+}
+function buildHafalanContext(question){
+  const q = String(question||"").toLowerCase();
+  if(!/hafal|tahfiz|tahfidz|murojaah|muraja'ah|surah|ayat/.test(q)) return "";
+  if(!DB) return "";
+
+  // Tentukan periode dari kata kunci pertanyaan
+  let from = todayISO(-30), to = todayISO(), label = "30 hari terakhir";
+  if(/hari ini/.test(q)){ from = todayISO(); label = "hari ini"; }
+  else if(/minggu/.test(q)){ from = todayISO(-7); label = "7 hari terakhir"; }
+  else if(/bulan ini|1 bulan|sebulan|bulan/.test(q)){
+    const d = new Date(); from = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-01"; label = "bulan ini";
+  }
+  else if(/tahun/.test(q)){ from = new Date().getFullYear()+"-01-01"; label = "tahun ini"; }
+  else if(/semua|seluruh|sejak/.test(q)){ from = "0000-00-00"; label = "seluruh data"; }
+
+  const students = DB.students || [];
+  const reports = (DB.hafalanReports || []).filter(r => r.date && r.date >= from && r.date <= to);
+
+  // Kelompokkan per santri
+  const byStudent = {};
+  reports.forEach(r=>{
+    const key = r.studentId || ("n:"+String(r.studentName||"").toLowerCase());
+    (byStudent[key] = byStudent[key] || {name:r.studentName||"-", list:[]}).list.push(r);
+  });
+
+  const lines = [];
+  lines.push("DATA HAFALAN SIBEST (periode: "+label+", "+from+" s/d "+to+")");
+  lines.push("Catatan: sistem hanya mencatat setoran (surah/ayat dari-sampai, tanggal, waktu). Sistem TIDAK mencatat nilai atau kualitas bacaan.");
+  lines.push("Total setoran pada periode ini: "+reports.length+" dari "+Object.keys(byStudent).length+" santri.");
+
+  // Apakah pertanyaan menyebut nama santri tertentu?
+  const named = students.filter(s => s.name && q.includes(s.name.toLowerCase()));
+  if(named.length){
+    named.slice(0,3).forEach(s=>{
+      const mine = (DB.hafalanReports||[]).filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===s.name.toLowerCase())
+        .sort((a,b)=> (a.date+" "+(a.time||"")).localeCompare(b.date+" "+(b.time||"")));
+      const inPeriod = mine.filter(r => r.date >= from && r.date <= to);
+      const totalAyat = inPeriod.reduce((n,r)=>n+aiHafalanAyatCount(r),0);
+      lines.push("");
+      lines.push("SANTRI: "+s.name+" (kelas "+(s.kelas||"-")+")");
+      lines.push("Jumlah setoran pada periode: "+inPeriod.length+", estimasi total ayat: "+totalAyat+".");
+      lines.push("Setoran terakhir sepanjang data: "+(mine.length ? mine[mine.length-1].date : "belum ada"));
+      inPeriod.slice(-40).forEach(r=>{
+        lines.push("- "+r.date+" "+(r.time||"")+": "+r.fromSurah+" ayat "+r.fromAyah+" sampai "+r.toSurah+" ayat "+r.toAyah+" (~"+aiHafalanAyatCount(r)+" ayat)");
+      });
+    });
+    return lines.join("\n");
+  }
+
+  // Ringkasan seluruh santri
+  const rows = students.map(s=>{
+    const mine = reports.filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===String(s.name||"").toLowerCase());
+    const all = (DB.hafalanReports||[]).filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===String(s.name||"").toLowerCase());
+    const last = all.reduce((m,r)=> (r.date>m ? r.date : m), "");
+    return { name:s.name, kelas:s.kelas||"-", count:mine.length, ayat:mine.reduce((n,r)=>n+aiHafalanAyatCount(r),0), last };
+  });
+  const active = rows.filter(r=>r.count>0).sort((a,b)=> b.ayat-a.ayat);
+  const none = rows.filter(r=>r.count===0);
+  lines.push("");
+  lines.push("SANTRI YANG SETORAN (urut estimasi ayat terbanyak) — format: nama | kelas | jumlah setoran | estimasi ayat | setoran terakhir");
+  active.slice(0,80).forEach(r=> lines.push("- "+r.name+" | "+r.kelas+" | "+r.count+"x | ~"+r.ayat+" ayat | "+(r.last||"-")));
+  lines.push("");
+  lines.push("SANTRI YANG BELUM ADA SETORAN pada periode ("+none.length+" santri):");
+  none.slice(0,80).forEach(r=> lines.push("- "+r.name+" | "+r.kelas+" | setoran terakhir: "+(r.last||"belum pernah")));
+  return lines.join("\n");
+}
+
 async function askSchoolAI(){
   const input = document.getElementById("school-ai-input");
   const sendBtn = document.getElementById("school-ai-send");
@@ -8465,7 +8548,7 @@ async function askSchoolAI(){
         agentId:agent.id,
         agentName:agent.name,
         systemPrompt:agent.prompt,
-        context:"SIBEST / SMK Muhammadiyah Kendari"
+        context:"SIBEST / SMK Muhammadiyah Kendari" + (function(){ try{ const c = buildHafalanContext(text); return c ? "\n\n"+c : ""; }catch(e){ console.error(e); return ""; } })()
       })
     });
     let data = null;

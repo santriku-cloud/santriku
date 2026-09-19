@@ -8374,6 +8374,12 @@ const SCHOOL_AI_AGENTS = [
   }
 ];
 
+const DEFAULT_AI_ENDPOINT = "https://sibest-ai.afdalurrija.workers.dev/api/ai";
+// Hapus endpoint lama yang salah ketik (afdalurrii) agar memakai URL bawaan
+try{
+  const _oldAi = localStorage.getItem("sibestAiEndpoint") || "";
+  if(_oldAi.includes("afdalurrii")) localStorage.removeItem("sibestAiEndpoint");
+}catch(e){}
 let selectedSchoolAIAgent = "admin";
 let schoolAIHistory = [];
 
@@ -8387,7 +8393,7 @@ function selectSchoolAIAgent(id){
 }
 
 function schoolAISettings(){
-  const current = localStorage.getItem("sibestAiEndpoint") || "";
+  const current = localStorage.getItem("sibestAiEndpoint") || DEFAULT_AI_ENDPOINT;
   const endpoint = prompt(
     "Masukkan URL backend AI Anda.\n\nContoh: https://domain-anda.com/api/ai\n\nKosongkan untuk menghapus endpoint.",
     current
@@ -8433,7 +8439,7 @@ async function askSchoolAI(){
   if(!text){ toast("Tulis pertanyaan atau tugas terlebih dahulu.", "error"); return; }
 
   const agent = schoolAIAgentById(selectedSchoolAIAgent);
-  const endpoint = localStorage.getItem("sibestAiEndpoint") || "";
+  const endpoint = localStorage.getItem("sibestAiEndpoint") || DEFAULT_AI_ENDPOINT;
   schoolAIHistory.push({role:"user", agent:agent.name, text});
   if(input) input.value = "";
 
@@ -8487,7 +8493,7 @@ function clearSchoolAIChat(){
 function renderTeacherAIAgency(){
   const el = document.getElementById("teacher-content");
   if(!el) return;
-  const endpoint = localStorage.getItem("sibestAiEndpoint") || "";
+  const endpoint = localStorage.getItem("sibestAiEndpoint") || DEFAULT_AI_ENDPOINT;
   const agent = schoolAIAgentById(selectedSchoolAIAgent);
 
   el.innerHTML = `

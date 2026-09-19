@@ -666,8 +666,12 @@ tailwind.config = {
     <h2 class="font-display text-xl font-bold mb-1">Laporan Hafalan</h2>
     <p class="text-sm text-on-surface-variant mb-5">Pilih nama surah atau ketik beberapa huruf. Tanggal dan waktu mengikuti perangkat.</p>
     <label class="block text-xs font-semibold text-on-surface-variant mb-1">Nama Siswa</label>
-    <input id="hafalan-student-name" list="hafalan-student-list" placeholder="Ketik nama siswa" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none mb-4"/>
-    <datalist id="hafalan-student-list"></datalist>
+    <div id="hafalan-name-wrap" class="relative mb-4">
+      <input id="hafalan-student-name" type="text" autocomplete="off" placeholder="Ketik untuk mencari, lalu pilih nama" oninput="hafalanNameInput(this.value)" onfocus="hafalanNameInput(this.value)" class="w-full pl-3 pr-9 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+      <span class="material-symbols-outlined absolute right-2.5 top-2.5 text-on-surface-variant pointer-events-none">arrow_drop_down</span>
+      <div id="hafalan-name-dd" class="hidden absolute z-30 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto bg-white border border-outline-variant rounded-lg shadow-lg"></div>
+      <p class="text-[11px] text-on-surface-variant mt-1">Nama tidak bisa diketik sendiri. Ketik beberapa huruf, lalu klik nama yang muncul.</p>
+    </div>
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <div><label class="block text-xs font-semibold text-on-surface-variant mb-1">Dari Surah</label><input id="hafalan-from-surah" list="surah-list" oninput="updateHafalanAyatLimits()" placeholder="Ketik nama surah" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/><input id="hafalan-from-ayah" type="number" min="1" value="1" class="w-full mt-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" placeholder="Ayat"/></div>
       <div><label class="block text-xs font-semibold text-on-surface-variant mb-1">Sampai Surah</label><input id="hafalan-to-surah" list="surah-list" oninput="updateHafalanAyatLimits()" placeholder="Ketik nama surah" class="w-full px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/><input id="hafalan-to-ayah" type="number" min="1" value="1" class="w-full mt-2 px-3 py-2.5 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" placeholder="Ayat"/></div>
@@ -7047,7 +7051,7 @@ function closeMediaLightbox(){
 }
 
 /* ===== Laporan Hafalan: kotak Cari nama + grafik tingkat hafalan ===== */
-function hafalanNameKey(n){ return String(n||"").trim().toLowerCase().replace(/\s+/g," "); }
+function hafalanNameKey(n){ return String(n||"").toLowerCase().replace(/[^\p{L}\p{N}]+/gu,""); }
 function hafalanReportNameKey(r){
   const st = r.studentId ? studentById(r.studentId) : null;
   return hafalanNameKey(st ? st.name : r.studentName);
@@ -7087,21 +7091,44 @@ function hafalanRowsHtml(list){
     </tr>`).join("");
 }
 
+/* Total ayat UNIK: rentang ayat yang saling tumpang tindih digabung, jadi ayat yang sama
+   yang disetor berulang kali hanya dihitung satu kali. */
+function hafalanUniqueAyatTotal(reports){
+  const iv = [];
+  (reports||[]).forEach(r=>{
+    const a = aiAyahIndex(r.fromSurah, r.fromAyah), b = aiAyahIndex(r.toSurah, r.toAyah);
+    if(a == null || b == null) return;
+    iv.push([Math.min(a,b), Math.max(a,b)]);
+  });
+  iv.sort((x,y)=>x[0]-y[0]);
+  let total = 0, curS = null, curE = null;
+  iv.forEach(([st,en])=>{
+    if(curE === null || st > curE){
+      if(curE !== null) total += curE - curS + 1;
+      curS = st; curE = en;
+    } else if(en > curE){ curE = en; }
+  });
+  if(curE !== null) total += curE - curS + 1;
+  return total;
+}
+
 /* Grafik batang: total ayat setoran per santri (mengikuti semua filter), urut terendah -> tertinggi */
 function hafalanChartData(list){
-  const totals = new Map();
+  const people = new Map(); // key nama -> { name, reports:[] }  (satu santri = satu batang)
+  const ensure = (k, name)=>{ if(k && !people.has(k)) people.set(k, { name, reports:[] }); return people.get(k); };
   if(hafalanNameSelected.length){
-    hafalanNameSelected.forEach(x=>totals.set(x.key,{ name:x.name, total:0 }));
+    hafalanNameSelected.forEach(x=>ensure(x.key, x.name));
   } else {
-    (DB.students||[]).forEach(st=>{ const k = hafalanNameKey(st.name); if(k && !totals.has(k)) totals.set(k,{ name:st.name, total:0 }); });
+    (DB.students||[]).forEach(st=>ensure(hafalanNameKey(st.name), st.name));
   }
   list.forEach(r=>{
     const k = hafalanReportNameKey(r);
-    if(!k) return;
-    if(!totals.has(k)) totals.set(k,{ name:hafalanReportDisplayName(r), total:0 });
-    totals.get(k).total += aiHafalanAyatCount(r);
+    const p = ensure(k, hafalanReportDisplayName(r));
+    if(p) p.reports.push(r);
   });
-  return [...totals.values()].sort((a,b)=> a.total-b.total || a.name.localeCompare(b.name));
+  return [...people.values()]
+    .map(p=>({ name:p.name, total:hafalanUniqueAyatTotal(p.reports) }))
+    .sort((a,b)=> a.total-b.total || a.name.localeCompare(b.name));
 }
 
 function hafalanChartHtml(list){
@@ -7121,7 +7148,7 @@ function hafalanChartHtml(list){
   }).join("");
   return `
     <div class="flex items-center justify-between gap-2 mb-1">
-      <span class="text-[10px] font-semibold text-on-surface-variant">Tingkat hafalan: total ayat, terendah ke tertinggi</span>
+      <span class="text-[10px] font-semibold text-on-surface-variant">Tingkat hafalan: total ayat (tanpa hitung dobel), terendah ke tertinggi</span>
       <span class="text-[10px] text-on-surface-variant whitespace-nowrap">${data.length} santri • geser kiri/kanan</span>
     </div>
     <div id="hafalan-chart-scroll" class="overflow-x-auto custom-scrollbar cursor-grab select-none pb-1">
@@ -8585,7 +8612,7 @@ function buildHafalanContext(question){
   // Kelompokkan per santri
   const byStudent = {};
   reports.forEach(r=>{
-    const key = r.studentId || ("n:"+String(r.studentName||"").toLowerCase());
+    const key = hafalanReportNameKey(r) || String(r.id);
     (byStudent[key] = byStudent[key] || {name:r.studentName||"-", list:[]}).list.push(r);
   });
 
@@ -8595,16 +8622,19 @@ function buildHafalanContext(question){
   lines.push("Total setoran pada periode ini: "+reports.length+" dari "+Object.keys(byStudent).length+" santri.");
 
   // Apakah pertanyaan menyebut nama santri tertentu?
-  const named = students.filter(s => s.name && q.includes(s.name.toLowerCase()));
+  const seenKeys = new Set();
+  const uniqueStudents = students.filter(st=>{ const k = hafalanNameKey(st.name); if(!k || seenKeys.has(k)) return false; seenKeys.add(k); return true; });
+  const named = uniqueStudents.filter(s => s.name && q.includes(s.name.toLowerCase()));
   if(named.length){
     named.slice(0,3).forEach(s=>{
-      const mine = (DB.hafalanReports||[]).filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===s.name.toLowerCase())
+      const sk = hafalanNameKey(s.name);
+      const mine = (DB.hafalanReports||[]).filter(r => hafalanReportNameKey(r)===sk)
         .sort((a,b)=> (a.date+" "+(a.time||"")).localeCompare(b.date+" "+(b.time||"")));
       const inPeriod = mine.filter(r => r.date >= from && r.date <= to);
-      const totalAyat = inPeriod.reduce((n,r)=>n+aiHafalanAyatCount(r),0);
+      const totalAyat = hafalanUniqueAyatTotal(inPeriod);
       lines.push("");
       lines.push("SANTRI: "+s.name+" (kelas "+(s.kelas||"-")+")");
-      lines.push("Jumlah setoran pada periode: "+inPeriod.length+", estimasi total ayat: "+totalAyat+".");
+      lines.push("Jumlah setoran pada periode: "+inPeriod.length+", total ayat unik (ayat yang sama tidak dihitung dobel): "+totalAyat+".");
       lines.push("Setoran terakhir sepanjang data: "+(mine.length ? mine[mine.length-1].date : "belum ada"));
       inPeriod.slice(-40).forEach(r=>{
         lines.push("- "+r.date+" "+(r.time||"")+": "+r.fromSurah+" ayat "+r.fromAyah+" sampai "+r.toSurah+" ayat "+r.toAyah+" (~"+aiHafalanAyatCount(r)+" ayat)");
@@ -8614,16 +8644,17 @@ function buildHafalanContext(question){
   }
 
   // Ringkasan seluruh santri
-  const rows = students.map(s=>{
-    const mine = reports.filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===String(s.name||"").toLowerCase());
-    const all = (DB.hafalanReports||[]).filter(r => (r.studentId===s.id) || String(r.studentName||"").toLowerCase()===String(s.name||"").toLowerCase());
+  const rows = uniqueStudents.map(s=>{
+    const sk = hafalanNameKey(s.name);
+    const mine = reports.filter(r => hafalanReportNameKey(r)===sk);
+    const all = (DB.hafalanReports||[]).filter(r => hafalanReportNameKey(r)===sk);
     const last = all.reduce((m,r)=> (r.date>m ? r.date : m), "");
-    return { name:s.name, kelas:s.kelas||"-", count:mine.length, ayat:mine.reduce((n,r)=>n+aiHafalanAyatCount(r),0), last };
+    return { name:s.name, kelas:s.kelas||"-", count:mine.length, ayat:hafalanUniqueAyatTotal(mine), last };
   });
   const active = rows.filter(r=>r.count>0).sort((a,b)=> b.ayat-a.ayat);
   const none = rows.filter(r=>r.count===0);
   lines.push("");
-  lines.push("SANTRI YANG SETORAN (urut estimasi ayat terbanyak) — format: nama | kelas | jumlah setoran | estimasi ayat | setoran terakhir");
+  lines.push("SANTRI YANG SETORAN (urut total ayat unik terbanyak; ayat yang sama tidak dihitung dobel) — format: nama | kelas | jumlah setoran | estimasi ayat | setoran terakhir");
   active.slice(0,80).forEach(r=> lines.push("- "+r.name+" | "+r.kelas+" | "+r.count+"x | ~"+r.ayat+" ayat | "+(r.last||"-")));
   lines.push("");
   lines.push("SANTRI YANG BELUM ADA SETORAN pada periode ("+none.length+" santri):");
@@ -9730,11 +9761,58 @@ async function deleteHafalanReport(id){
   toast('Laporan hafalan dihapus.'); renderTeacherReports();
 }
 
+let hafalanPickedStudentId = null;   // santri yang dipilih dari daftar (nama tidak boleh diketik bebas)
+let hafalanNameOptions = [];
+
 function initHafalanForm(){
-  const list=document.getElementById('surah-list'), students=document.getElementById('hafalan-student-list');
+  const list=document.getElementById('surah-list');
   if(list) list.innerHTML=QURAN_SURAHS.map(x=>`<option value="${x.name}">${x.name} — ${x.ayah} ayat</option>`).join('');
-  if(students) students.innerHTML=(DB.students||[]).map(x=>`<option value="${escapeHtml(x.name)}"></option>`).join('');
+  resetHafalanForm();
+}
+
+/* Kosongkan semua isian form (dipanggil saat form dibuka dan setelah laporan berhasil terkirim) */
+function resetHafalanForm(){
+  hafalanPickedStudentId = null;
+  ['hafalan-student-name','hafalan-from-surah','hafalan-to-surah'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value=''; });
+  ['hafalan-from-ayah','hafalan-to-ayah'].forEach(id=>{ const e=document.getElementById(id); if(e) e.value='1'; });
+  const err=document.getElementById('hafalan-error'); if(err){ err.textContent=''; err.classList.add('hidden'); }
+  const dd=document.getElementById('hafalan-name-dd'); if(dd){ dd.classList.add('hidden'); dd.innerHTML=''; }
   updateHafalanAyatLimits();
+}
+
+/* Kotak nama: mengetik hanya untuk mencari. Nama baru sah setelah diklik dari daftar. */
+function hafalanNameInput(v){
+  const picked = (DB.students||[]).find(x=>x.id===hafalanPickedStudentId);
+  if(picked && picked.name !== v) hafalanPickedStudentId = null;   // teks diubah -> pilihan dibatalkan
+  const dd = document.getElementById('hafalan-name-dd');
+  if(!dd) return;
+  if(hafalanPickedStudentId){ dd.classList.add('hidden'); return; }
+  const q = hafalanNameKey(v);
+  const seen = new Set();
+  const all = [...(DB.students||[])].filter(st=>{ const k=hafalanNameKey(st.name); if(!k||seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+  hafalanNameOptions = (q ? all.filter(st=>hafalanNameKey(st.name).includes(q)) : all).slice(0,50);
+  dd.innerHTML = hafalanNameOptions.length
+    ? hafalanNameOptions.map((st,i)=>`<button type="button" onmousedown="event.preventDefault()" onclick="hafalanPickStudent(${i})" class="w-full text-left px-3 py-2.5 text-sm hover:bg-surface-container">${escapeHtml(st.name)}</button>`).join('')
+    : `<div class="px-3 py-2.5 text-sm text-on-surface-variant">Tidak ada nama yang cocok.</div>`;
+  dd.classList.remove('hidden');
+}
+function hafalanPickStudent(i){
+  const st = hafalanNameOptions[i];
+  if(!st) return;
+  hafalanPickedStudentId = st.id;
+  const inp = document.getElementById('hafalan-student-name'); if(inp) inp.value = st.name;
+  const dd = document.getElementById('hafalan-name-dd'); if(dd) dd.classList.add('hidden');
+  const err = document.getElementById('hafalan-error'); if(err) err.classList.add('hidden');
+}
+if(!window._hafalanNameBound){
+  window._hafalanNameBound = true;
+  document.addEventListener('click', e=>{
+    const dd = document.getElementById('hafalan-name-dd');
+    if(!dd) return;
+    if(e.target.closest && e.target.closest('#hafalan-name-wrap')) return;
+    dd.classList.add('hidden');
+  });
 }
 function leavePublicAccess(){
   // Keluar dari mode Barcode Umum hanya dipakai tombol "Kembali ke Beranda".
@@ -9760,10 +9838,12 @@ async function submitHafalanReport(){
   const submitBtn = document.getElementById('hafalan-submit-btn');
   if(submitBtn){ submitBtn.disabled = true; submitBtn.classList.add('opacity-60','cursor-not-allowed'); submitBtn.textContent = 'Mengirim...'; }
   try {
-    const name=(document.getElementById('hafalan-student-name').value||'').trim(), fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=todayISO(), time=nowHHMM(), err=document.getElementById('hafalan-error');
+    const pickedStudent=(DB.students||[]).find(x=>x.id===hafalanPickedStudentId);
+    const name=pickedStudent?pickedStudent.name:'', fs=(document.getElementById('hafalan-from-surah').value||'').trim(), ts=(document.getElementById('hafalan-to-surah').value||'').trim(), fa=Number(document.getElementById('hafalan-from-ayah').value), ta=Number(document.getElementById('hafalan-to-ayah').value), date=todayISO(), time=nowHHMM(), err=document.getElementById('hafalan-error');
     const f=QURAN_SURAHS.find(x=>x.name.toLowerCase()===fs.toLowerCase()), t=QURAN_SURAHS.find(x=>x.name.toLowerCase()===ts.toLowerCase());
-    if(!name||!f||!t||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
-    const student=(DB.students||[]).find(x=>x.name.toLowerCase()===name.toLowerCase());
+    if(!pickedStudent){err.textContent='Pilih nama siswa dari daftar yang muncul (nama tidak bisa diketik sendiri).';err.classList.remove('hidden');return;}
+    if(!f||!t||!fa||!ta||fa>f.ayah||ta>t.ayah){err.textContent='Lengkapi data dan pastikan ayat sesuai jumlah ayat surah.';err.classList.remove('hidden');return;}
+    const student=pickedStudent;
     let duplicate = false;
     await saveDBFresh(db=>{
       if(!db.hafalanReports) db.hafalanReports=[];
@@ -9773,7 +9853,7 @@ async function submitHafalanReport(){
       if(!duplicate) db.hafalanReports.push({...candidate,id:uid('hf'),createdAt:new Date().toISOString()});
     });
     if(duplicate){ toast('Laporan hafalan yang sama sudah tercatat.', 'error'); return; }
-    toast('Laporan hafalan berhasil dikirim.'); backToPublicGateway();
+    toast('Laporan hafalan berhasil dikirim.'); resetHafalanForm(); backToPublicGateway();
   } finally {
     hafalanSubmitBusy = false;
     if(submitBtn){ submitBtn.disabled = false; submitBtn.classList.remove('opacity-60','cursor-not-allowed'); submitBtn.textContent = 'Kirim Laporan Hafalan'; }

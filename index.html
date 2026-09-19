@@ -8468,8 +8468,10 @@ async function askSchoolAI(){
         context:"SIBEST / SMK Muhammadiyah Kendari"
       })
     });
-    if(!response.ok) throw new Error("HTTP "+response.status);
-    const data = await response.json();
+    let data = null;
+    try{ data = await response.json(); }catch(e){}
+    if(!response.ok) throw new Error((data && data.error) ? data.error : "HTTP "+response.status);
+    if(!data) throw new Error("Respons backend bukan JSON yang valid.");
     const answer = data.answer || data.output || data.message || data.text;
     if(!answer) throw new Error("Respons backend tidak memiliki field answer/output/message/text.");
     schoolAIHistory.push({role:"assistant", agent:agent.name, text:String(answer)});
@@ -8478,7 +8480,7 @@ async function askSchoolAI(){
     schoolAIHistory.push({
       role:"assistant",
       agent:"AI Agency",
-      text:"Backend AI belum dapat dihubungi.\n\nPeriksa URL endpoint dan pastikan backend menerima POST JSON dengan field: message, agentId, agentName, systemPrompt, context."
+      text:"Backend AI belum dapat dihubungi.\n\nDetail: "+(err && err.message ? err.message : "tidak diketahui")+"\n\nPeriksa URL endpoint dan pastikan backend menerima POST JSON dengan field: message, agentId, agentName, systemPrompt, context."
     });
   }finally{
     renderTeacherAIAgency();

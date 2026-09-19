@@ -3327,6 +3327,9 @@ let studentViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFro
 let parentViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let reportViolationFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
 let reportHafalanFilter = { dateFrom:"", dateTo:"", month:"", day:"", timeFrom:"", timeTo:"" };
+let hafalanNameSelected = [];   // santri yang dipilih di kotak Cari: [{key, name}]
+let hafalanNameQuery = "";
+let hafalanDropdownItems = [];
 // Saat guru klik "Buat Catatan Pelanggaran" pada sebuah Laporan Santri, id laporan itu disimpan
 // di sini sementara. Kalau guru lalu menekan "+ Catat", catatan pelanggaran yang dibuat akan
 // ditautkan ke laporan tsb (r.violationRecordId) supaya nanti tidak dobel tercatat saat laporan
@@ -4402,9 +4405,10 @@ function violationMatchesFilter(r, f){
   return true;
 }
 
-function violationFilterBar(prefix, f){
+function violationFilterBar(prefix, f, leadHtml){
   return `
   <div class="flex flex-wrap items-end gap-2 p-3 bg-surface-container rounded-lg mb-3">
+    ${leadHtml || ""}
     <div class="flex flex-col">
       <label class="text-[10px] text-on-surface-variant mb-1">Dari Tanggal</label>
       <input id="${prefix}-f-datefrom" type="date" value="${f.dateFrom||""}" onchange="applyViolationFilter('${prefix}')" class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none"/>
@@ -4465,7 +4469,7 @@ function resetViolationFilter(prefix){
   else if(prefix==="student"){ studentViolationFilter = empty; renderStudentDashboard(); }
   else if(prefix==="parent"){ parentViolationFilter = empty; renderParentDashboard(); }
   else if(prefix==="report"){ reportViolationFilter = empty; renderTeacherReports(); }
-  else if(prefix==="hafalan-report"){ reportHafalanFilter = empty; renderTeacherReports(); }
+  else if(prefix==="hafalan-report"){ reportHafalanFilter = empty; hafalanNameSelected = []; hafalanNameQuery = ""; renderTeacherReports(); }
 }
 
 function durationDays(startIso, endIso){
@@ -7042,20 +7046,34 @@ function closeMediaLightbox(){
   document.getElementById("media-lightbox-body").innerHTML = "";
 }
 
-function renderTeacherReports(){
-  const el = document.getElementById("teacher-content");
-  const violationList = [...(DB.violationReports || [])]
-    .filter(r=>violationMatchesFilter(r, reportViolationFilter))
-    .sort((a,b)=>
-    new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
-  );
-  const hafalanList = [...(DB.hafalanReports || [])]
-    .filter(r=>violationMatchesFilter(r, reportHafalanFilter))
-    .sort((a,b)=>
-    new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
-  );
+/* ===== Laporan Hafalan: kotak Cari nama + grafik tingkat hafalan ===== */
+function hafalanNameKey(n){ return String(n||"").trim().toLowerCase().replace(/\s+/g," "); }
+function hafalanReportNameKey(r){
+  const st = r.studentId ? studentById(r.studentId) : null;
+  return hafalanNameKey(st ? st.name : r.studentName);
+}
+function hafalanReportDisplayName(r){
+  const st = r.studentId ? studentById(r.studentId) : null;
+  return (st && st.name) || r.studentName || "-";
+}
+function hafalanAllNames(){
+  const map = new Map();
+  (DB.students||[]).forEach(st=>{ const k = hafalanNameKey(st.name); if(k && !map.has(k)) map.set(k, st.name); });
+  (DB.hafalanReports||[]).forEach(r=>{ const k = hafalanReportNameKey(r); if(k && !map.has(k)) map.set(k, hafalanReportDisplayName(r)); });
+  return [...map.entries()].map(([key,name])=>({key,name})).sort((a,b)=>a.name.localeCompare(b.name));
+}
 
-  const hafalanRows = hafalanList.map(r=>`
+function getHafalanFilteredList(){
+  const sel = new Set(hafalanNameSelected.map(x=>x.key));
+  return [...(DB.hafalanReports || [])]
+    .filter(r=>violationMatchesFilter(r, reportHafalanFilter))
+    .filter(r=>!sel.size || sel.has(hafalanReportNameKey(r)))
+    .sort((a,b)=> new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`));
+}
+
+function hafalanRowsHtml(list){
+  if(!list.length) return `<tr><td colspan="6" class="p-6 text-center text-on-surface-variant">Belum ada laporan hafalan.</td></tr>`;
+  return list.map(r=>`
     <tr class="border-t border-outline-variant hover:bg-surface-container-low">
       <td class="p-3 font-semibold whitespace-nowrap">${escapeHtml(r.studentName||"-")}</td>
       <td class="p-3 whitespace-nowrap">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"}</td>
@@ -7067,6 +7085,157 @@ function renderTeacherReports(){
         <button onclick="deleteHafalanReport('${r.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
       </td>
     </tr>`).join("");
+}
+
+/* Grafik batang: total ayat setoran per santri (mengikuti semua filter), urut terendah -> tertinggi */
+function hafalanChartData(list){
+  const totals = new Map();
+  if(hafalanNameSelected.length){
+    hafalanNameSelected.forEach(x=>totals.set(x.key,{ name:x.name, total:0 }));
+  } else {
+    (DB.students||[]).forEach(st=>{ const k = hafalanNameKey(st.name); if(k && !totals.has(k)) totals.set(k,{ name:st.name, total:0 }); });
+  }
+  list.forEach(r=>{
+    const k = hafalanReportNameKey(r);
+    if(!k) return;
+    if(!totals.has(k)) totals.set(k,{ name:hafalanReportDisplayName(r), total:0 });
+    totals.get(k).total += aiHafalanAyatCount(r);
+  });
+  return [...totals.values()].sort((a,b)=> a.total-b.total || a.name.localeCompare(b.name));
+}
+
+function hafalanChartHtml(list){
+  const data = hafalanChartData(list);
+  if(!data.length) return `<p class="text-xs text-on-surface-variant">Belum ada data untuk grafik.</p>`;
+  const max = Math.max(1, ...data.map(d=>d.total));
+  const H = 84;
+  const cols = data.map(d=>{
+    const h = d.total ? Math.max(4, Math.round(d.total/max*H)) : 2;
+    return `<div class="flex flex-col items-center shrink-0 w-9" title="${escapeHtml(d.name)}: ${d.total} ayat">
+      <div class="flex flex-col items-center justify-end" style="height:${H+16}px">
+        <span class="text-[10px] font-semibold text-on-surface-variant mb-0.5">${d.total}</span>
+        <div class="w-5 rounded-t ${d.total ? "bg-primary" : "bg-outline-variant"}" style="height:${h}px"></div>
+      </div>
+      <div class="mt-1 text-[10px] text-on-surface-variant" style="writing-mode:vertical-rl;transform:rotate(180deg);height:92px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</div>
+    </div>`;
+  }).join("");
+  return `
+    <div class="flex items-center justify-between gap-2 mb-1">
+      <span class="text-[10px] font-semibold text-on-surface-variant">Tingkat hafalan: total ayat, terendah ke tertinggi</span>
+      <span class="text-[10px] text-on-surface-variant whitespace-nowrap">${data.length} santri • geser kiri/kanan</span>
+    </div>
+    <div id="hafalan-chart-scroll" class="overflow-x-auto custom-scrollbar cursor-grab select-none pb-1">
+      <div class="flex items-end gap-1 min-w-max border-b border-outline-variant">${cols}</div>
+    </div>`;
+}
+
+function enableHafalanChartDrag(){
+  const el = document.getElementById("hafalan-chart-scroll");
+  if(!el) return;
+  let down = false, startX = 0, startLeft = 0;
+  el.addEventListener("mousedown", e=>{ down = true; startX = e.pageX; startLeft = el.scrollLeft; el.classList.add("cursor-grabbing"); });
+  const stop = ()=>{ down = false; el.classList.remove("cursor-grabbing"); };
+  el.addEventListener("mouseup", stop);
+  el.addEventListener("mouseleave", stop);
+  el.addEventListener("mousemove", e=>{ if(!down) return; e.preventDefault(); el.scrollLeft = startLeft - (e.pageX - startX); });
+}
+
+function hafalanSearchWidgetHtml(){
+  return `
+    <div id="hafalan-search-wrap" class="flex flex-col relative">
+      <label class="text-[10px] text-on-surface-variant mb-1">Cari Nama Siswa</label>
+      <input id="hafalan-search" type="text" autocomplete="off" placeholder="Ketik nama..." value="${escapeHtml(hafalanNameQuery)}"
+        oninput="hafalanSearchInput(this.value)" onfocus="hafalanSearchInput(this.value)"
+        class="px-2 py-1.5 rounded-md border border-outline-variant text-xs focus:border-primary outline-none w-44"/>
+      <div id="hafalan-search-dd" class="hidden absolute z-30 left-0 top-full mt-1 w-64 max-h-60 overflow-y-auto bg-white border border-outline-variant rounded-lg shadow-lg"></div>
+    </div>`;
+}
+
+function hafalanChipsHtml(){
+  if(!hafalanNameSelected.length) return "";
+  return `<div class="flex flex-wrap items-center gap-1.5">
+    <span class="text-[10px] text-on-surface-variant mr-1">Dipilih:</span>
+    ${hafalanNameSelected.map((x,i)=>`<span class="inline-flex items-center gap-1 bg-primary-fixed text-primary text-xs font-semibold pl-2.5 pr-1.5 py-1 rounded-full">${escapeHtml(x.name)}<button type="button" onclick="removeHafalanNameAt(${i})" class="material-symbols-outlined text-[14px] hover:opacity-70" aria-label="Hapus">close</button></span>`).join("")}
+    <button type="button" onclick="clearHafalanNames()" class="text-[11px] text-primary font-semibold hover:underline ml-1">Hapus semua</button>
+  </div>`;
+}
+
+function renderHafalanDropdown(){
+  const dd = document.getElementById("hafalan-search-dd");
+  if(!dd) return;
+  const q = hafalanNameKey(hafalanNameQuery);
+  const all = hafalanAllNames();
+  const matches = (q ? all.filter(x=>x.key.includes(q)) : all).slice(0,40);
+  hafalanDropdownItems = matches;
+  const selectedKeys = new Set(hafalanNameSelected.map(x=>x.key));
+  if(!matches.length){
+    dd.innerHTML = `<div class="p-3 text-xs text-on-surface-variant">Tidak ada nama yang cocok.</div>`;
+  } else {
+    dd.innerHTML = matches.map((x,i)=>{
+      const on = selectedKeys.has(x.key);
+      return `<button type="button" onclick="toggleHafalanNameAt(${i})" class="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-xs hover:bg-surface-container ${on ? "bg-primary-fixed/40" : ""}">
+        <span class="truncate">${escapeHtml(x.name)}</span>
+        <span class="shrink-0 w-4 h-4 rounded-full border-2 flex items-center justify-center ${on ? "bg-primary border-primary" : "border-outline"}">${on ? `<span class="material-symbols-outlined text-white" style="font-size:11px">check</span>` : ""}</span>
+      </button>`;
+    }).join("");
+  }
+  dd.classList.remove("hidden");
+}
+
+function hafalanSearchInput(v){
+  hafalanNameQuery = v || "";
+  renderHafalanDropdown();
+}
+
+function toggleHafalanNameAt(i){
+  const item = hafalanDropdownItems[i];
+  if(!item) return;
+  const idx = hafalanNameSelected.findIndex(x=>x.key===item.key);
+  if(idx >= 0) hafalanNameSelected.splice(idx,1); else hafalanNameSelected.push({ key:item.key, name:item.name });
+  renderHafalanDropdown();
+  refreshHafalanSection();
+}
+function removeHafalanNameAt(i){
+  hafalanNameSelected.splice(i,1);
+  const dd = document.getElementById("hafalan-search-dd");
+  if(dd && !dd.classList.contains("hidden")) renderHafalanDropdown();
+  refreshHafalanSection();
+}
+function clearHafalanNames(){
+  hafalanNameSelected = [];
+  const dd = document.getElementById("hafalan-search-dd");
+  if(dd && !dd.classList.contains("hidden")) renderHafalanDropdown();
+  refreshHafalanSection();
+}
+
+/* Perbarui tabel, grafik, jumlah, dan chip tanpa merender ulang seluruh halaman (fokus kotak Cari tetap) */
+function refreshHafalanSection(){
+  const list = getHafalanFilteredList();
+  const tb = document.getElementById("hafalan-tbody"); if(tb) tb.innerHTML = hafalanRowsHtml(list);
+  const cnt = document.getElementById("hafalan-count"); if(cnt) cnt.textContent = list.length+" laporan";
+  const chart = document.getElementById("hafalan-chart-wrap"); if(chart){ chart.innerHTML = hafalanChartHtml(list); enableHafalanChartDrag(); }
+  const chips = document.getElementById("hafalan-chips"); if(chips) chips.innerHTML = hafalanChipsHtml();
+}
+
+if(!window._hafalanSearchBound){
+  window._hafalanSearchBound = true;
+  document.addEventListener("click", e=>{
+    const dd = document.getElementById("hafalan-search-dd");
+    if(!dd) return;
+    if(e.target.closest && e.target.closest("#hafalan-search-wrap")) return;
+    dd.classList.add("hidden");
+  });
+}
+
+function renderTeacherReports(){
+  const el = document.getElementById("teacher-content");
+  const violationList = [...(DB.violationReports || [])]
+    .filter(r=>violationMatchesFilter(r, reportViolationFilter))
+    .sort((a,b)=>
+    new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`)
+  );
+  const hafalanList = getHafalanFilteredList();
+  const hafalanRows = hafalanRowsHtml(hafalanList);
 
   const violationRows = violationList.map(r=>{
     const target = studentById(r.targetId);
@@ -7108,20 +7277,22 @@ function renderTeacherReports(){
       <h3 class="font-display text-2xl font-bold">Laporan Santri</h3>
       <p class="text-on-surface-variant">Semua laporan hafalan dan laporan pelanggaran ditampilkan dalam tabel terpisah.</p>
     </div>
-    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant overflow-hidden mb-6">
-      <div class="p-5 border-b border-outline-variant flex items-center justify-between gap-3">
-        <div><h4 class="font-display font-bold">Laporan Hafalan</h4><p class="text-xs text-on-surface-variant mt-1">Seluruh laporan hafalan yang dikirim melalui Barcode Umum <span class="text-primary font-semibold">SIB</span><span class="text-[#8FCB6B] font-semibold">EST</span>.</p></div>
-        <span class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full whitespace-nowrap">${hafalanList.length} laporan</span>
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant mb-6">
+      <div class="p-5 border-b border-outline-variant flex flex-wrap items-start gap-4">
+        <div class="shrink-0 max-w-[260px]"><h4 class="font-display font-bold">Laporan Hafalan</h4><p class="text-xs text-on-surface-variant mt-1">Seluruh laporan hafalan yang dikirim melalui Barcode Umum <span class="text-primary font-semibold">SIB</span><span class="text-[#8FCB6B] font-semibold">EST</span>.</p></div>
+        <div id="hafalan-chart-wrap" class="flex-1 basis-[280px] min-w-0">${hafalanChartHtml(hafalanList)}</div>
+        <span id="hafalan-count" class="text-xs font-semibold bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full whitespace-nowrap ml-auto">${hafalanList.length} laporan</span>
       </div>
       <div class="px-5 pt-3">
-        ${violationFilterBar("hafalan-report", reportHafalanFilter)}
+        ${violationFilterBar("hafalan-report", reportHafalanFilter, hafalanSearchWidgetHtml())}
+        <div id="hafalan-chips" class="mb-3">${hafalanChipsHtml()}</div>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-xs">
           <thead class="bg-surface-container"><tr>
             <th class="p-3 font-semibold whitespace-nowrap">Nama Siswa</th><th class="p-3 font-semibold whitespace-nowrap">Dari</th><th class="p-3 font-semibold whitespace-nowrap">Sampai</th><th class="p-3 font-semibold whitespace-nowrap">Tanggal</th><th class="p-3 font-semibold whitespace-nowrap">Waktu</th><th class="p-3 font-semibold whitespace-nowrap">Aksi</th>
           </tr></thead>
-          <tbody>${hafalanRows || `<tr><td colspan="6" class="p-6 text-center text-on-surface-variant">Belum ada laporan hafalan.</td></tr>`}</tbody>
+          <tbody id="hafalan-tbody">${hafalanRows}</tbody>
         </table>
       </div>
     </div>
@@ -7143,6 +7314,7 @@ function renderTeacherReports(){
       </div>
     </div>
   `;
+  enableHafalanChartDrag();
 }
 
 // Pastikan ada jenis pelanggaran khusus untuk laporan santri dengan poin tertentu,

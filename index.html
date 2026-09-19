@@ -4488,9 +4488,27 @@ function statusBadge(status){
 /* =========================================================
    VISITS (Jadwal Kunjungan) & IZIN (Perizinan) — shared helpers
    ========================================================= */
-async function addVisitRequest({ studentId, day, time, keperluan, requestedBy }){
-  DB.visits.push({ id: uid("vis"), studentId, day, time, keperluan, requestedBy, status: "pending", createdAt: todayISO() });
-  notifyVisitEmail(studentById(studentId), day, time, keperluan, requestedBy);
+function dayNameFromISO(iso){
+  const d = new Date(String(iso).slice(0,10)+"T00:00:00");
+  return HARI_OPTIONS[(d.getDay()+6)%7]; // HARI_OPTIONS mulai dari Senin
+}
+/* Tanggal kunjungan: pakai v.date kalau ada. Data lama hanya punya nama hari, jadi tanggalnya
+   diperkirakan = hari yang sama pertama pada/setelah tanggal pengajuan (createdAt). */
+function visitEffectiveDate(v){
+  if(v && v.date) return { date: String(v.date).slice(0,10), estimated: false };
+  if(!v || !v.day || !v.createdAt) return { date: "", estimated: true };
+  const idx = HARI_OPTIONS.indexOf(v.day);
+  if(idx < 0) return { date: "", estimated: true };
+  const base = new Date(String(v.createdAt).slice(0,10)+"T00:00:00");
+  const delta = (((idx+1)%7) - base.getDay() + 7) % 7;
+  base.setDate(base.getDate() + delta);
+  const iso = base.getFullYear()+"-"+String(base.getMonth()+1).padStart(2,"0")+"-"+String(base.getDate()).padStart(2,"0");
+  return { date: iso, estimated: true };
+}
+
+async function addVisitRequest({ studentId, day, date, time, keperluan, requestedBy }){
+  DB.visits.push({ id: uid("vis"), studentId, day, date: date || "", time, keperluan, requestedBy, status: "pending", createdAt: todayISO() });
+  notifyVisitEmail(studentById(studentId), date ? (day+", "+formatDate(date)) : day, time, keperluan, requestedBy);
   await saveDB();
 }
 
@@ -5616,7 +5634,7 @@ function laporanRows(key, filter){
       .sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt))
       .map(v=>({
         "Nama Siswa": (studentById(v.studentId)||{}).name || "(dihapus)",
-        "Hari": v.day||"-", "Waktu": v.time||"-", "Keperluan": v.keperluan||"-",
+        "Hari": v.day||"-", "Tanggal Kunjungan": v.date ? formatDate(v.date) : "-", "Waktu": v.time||"-", "Keperluan": v.keperluan||"-",
         "Diajukan Oleh": v.requestedBy||"-", "Status": v.status||"-", "Diajukan Pada": formatDate(v.createdAt),
       }));
   }
@@ -8639,8 +8657,104 @@ function buildViolationContext(question){
   return lines.join("\n");
 }
 
+
+function aiParseTargetDate(q){
+  const MONTHS = ["januari","februari","maret","april","mei","juni","juli","agustus","september","oktober","november","desember"];
+  let m = q.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return m[1]+"-"+m[2]+"-"+m[3];
+  m = q.match(/(?:tanggal|tgl)\s+(\d{1,2})(?:\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember))?(?:\s+(\d{4}))?/);
+  if(!m) m = q.match(/(\d{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)(?:\s+(\d{4}))?/);
+  if(!m) return "";
+  const now = new Date();
+  const day = Number(m[1]);
+  const mon = m[2] ? MONTHS.indexOf(m[2]) : now.getMonth();
+  const yr = m[3] ? Number(m[3]) : now.getFullYear();
+  if(!day || day > 31) return "";
+  return yr+"-"+String(mon+1).padStart(2,"0")+"-"+String(day).padStart(2,"0");
+}
+
+function buildIzinKunjunganContext(question){
+  const q = String(question||"").toLowerCase();
+  if(!/izin|perizinan|pulang|kunjung|jenguk|besuk/.test(q) || !DB) return "";
+
+  const { from, to, label } = aiPeriodFromQuestion(q);
+  const today = todayISO();
+  const students = DB.students || [];
+  const nameOf = id => (students.find(x=>x.id===id)||{}).name || "(santri dihapus)";
+  const kelasOf = id => (students.find(x=>x.id===id)||{}).kelas || "-";
+  const stLabel = st => ({ pending:"menunggu persetujuan", approved:"disetujui", rejected:"ditolak" }[st] || st || "-");
+
+  const named = students.filter(st => st.name && q.includes(st.name.toLowerCase()));
+  const namedIds = new Set(named.map(st=>st.id));
+  const onlyNamed = namedIds.size > 0;
+
+  const izinAll = (DB.izinRequests||[]).filter(r => !onlyNamed || namedIds.has(r.studentId));
+  const visitAll = (DB.visits||[]).filter(v => !onlyNamed || namedIds.has(v.studentId));
+
+  const lines = [];
+  lines.push("DATA PERIZINAN & KUNJUNGAN SIBEST (periode: "+label+", "+from+" s/d "+to+")");
+  lines.push("Hari ini: "+today+". Status yang dipakai sistem: menunggu persetujuan, disetujui, ditolak.");
+  if(onlyNamed) lines.push("Difilter untuk santri: "+named.map(st=>st.name).join(", ")+".");
+
+  // 1. Santri yang sedang pulang hari ini
+  const away = izinAll.filter(r => r.status==="approved" && r.startDate <= today && r.endDate >= today);
+  lines.push("");
+  lines.push("SANTRI YANG SEDANG IZIN/PULANG HARI INI (izin disetujui yang mencakup hari ini): "+away.length+" santri");
+  away.slice(0,50).forEach(r=> lines.push("- "+nameOf(r.studentId)+" | "+kelasOf(r.studentId)+" | "+r.startDate+" s/d "+r.endDate+" | "+(r.keperluan||"-")+" | diajukan oleh: "+(r.requestedBy||"-")));
+
+  // 2. Izin yang masih menunggu persetujuan
+  const pendIzin = izinAll.filter(r => r.status==="pending").sort((a,b)=> String(a.startDate).localeCompare(String(b.startDate)));
+  lines.push("");
+  lines.push("PENGAJUAN IZIN YANG MASIH MENUNGGU PERSETUJUAN: "+pendIzin.length);
+  pendIzin.slice(0,30).forEach(r=> lines.push("- "+nameOf(r.studentId)+" | "+kelasOf(r.studentId)+" | "+r.startDate+" s/d "+r.endDate+" | "+(r.keperluan||"-")+" | diajukan oleh: "+(r.requestedBy||"-")));
+
+  // 3. Rekap izin pada periode (berdasarkan tanggal mulai izin)
+  const izinPeriod = izinAll.filter(r => r.startDate && r.startDate >= from && r.startDate <= to);
+  const cnt = { pending:0, approved:0, rejected:0 };
+  izinPeriod.forEach(r=>{ if(cnt[r.status]!=null) cnt[r.status]++; });
+  lines.push("");
+  lines.push("REKAP IZIN PADA PERIODE (berdasarkan tanggal mulai): total "+izinPeriod.length+" — disetujui "+cnt.approved+", menunggu "+cnt.pending+", ditolak "+cnt.rejected+".");
+  const perStudent = {};
+  izinPeriod.forEach(r=>{ perStudent[r.studentId] = (perStudent[r.studentId]||0)+1; });
+  Object.entries(perStudent).sort((a,b)=>b[1]-a[1]).slice(0,15)
+    .forEach(([id,c])=> lines.push("- "+nameOf(id)+" ("+kelasOf(id)+"): "+c+"x izin"));
+  const keperluanCount = {};
+  izinPeriod.forEach(r=>{ const k=String(r.keperluan||"-").trim().toLowerCase().slice(0,40); keperluanCount[k]=(keperluanCount[k]||0)+1; });
+  const topK = Object.entries(keperluanCount).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  if(topK.length){ lines.push("Alasan izin yang sering muncul:"); topK.forEach(([k,c])=> lines.push("- "+k+": "+c+"x")); }
+
+  // 4. Kunjungan orang tua
+  const visitPend = visitAll.filter(v => v.status==="pending");
+  const visitApproved = visitAll.filter(v => v.status==="approved");
+  const visitPeriod = visitAll.filter(v => v.createdAt && String(v.createdAt).slice(0,10) >= from && String(v.createdAt).slice(0,10) <= to);
+  lines.push("");
+  lines.push("KUNJUNGAN ORANG TUA — menunggu persetujuan: "+visitPend.length+", disetujui: "+visitApproved.length+", diajukan pada periode: "+visitPeriod.length+".");
+  lines.push("Catatan: pengajuan kunjungan baru memiliki tanggal pasti. Pengajuan lama hanya punya nama hari, sehingga tanggalnya diberi tanda (perkiraan) = hari tersebut pertama pada atau setelah tanggal pengajuan.");
+  const visitLine = v => {
+    const e = visitEffectiveDate(v);
+    const when = e.date ? ("tanggal "+e.date+" ("+(v.day||dayNameFromISO(e.date))+")"+(e.estimated ? " (perkiraan)" : "")) : ("hari "+(v.day||"-"));
+    return "- "+nameOf(v.studentId)+" | "+kelasOf(v.studentId)+" | "+when+" jam "+(v.time||"-")+" | "+(v.keperluan||"-")+" | oleh: "+(v.requestedBy||"-")+" | "+stLabel(v.status);
+  };
+  const showVisits = [...visitPend, ...visitApproved.filter(v=>!visitPend.includes(v))].slice(0,40);
+  showVisits.forEach(v=> lines.push(visitLine(v)));
+
+  // 5. Jika pertanyaan menyebut tanggal tertentu
+  const target = aiParseTargetDate(q);
+  if(target){
+    const vOn = visitAll.filter(v => visitEffectiveDate(v).date === target);
+    const iOn = izinAll.filter(r => r.startDate && r.startDate <= target && r.endDate >= target && r.status !== "rejected");
+    lines.push("");
+    lines.push("KHUSUS TANGGAL "+target+" ("+dayNameFromISO(target)+"):");
+    lines.push("Kunjungan pada tanggal ini: "+vOn.length);
+    vOn.slice(0,40).forEach(v=> lines.push(visitLine(v)));
+    lines.push("Santri yang izin/pulang mencakup tanggal ini (disetujui atau menunggu): "+iOn.length);
+    iOn.slice(0,40).forEach(r=> lines.push("- "+nameOf(r.studentId)+" | "+kelasOf(r.studentId)+" | "+r.startDate+" s/d "+r.endDate+" | "+(r.keperluan||"-")+" | "+stLabel(r.status)));
+  }
+  return lines.join("\n");
+}
+
 function buildAIContext(question){
-  return [buildHafalanContext(question), buildPaymentContext(question), buildViolationContext(question)]
+  return [buildHafalanContext(question), buildPaymentContext(question), buildViolationContext(question), buildIzinKunjunganContext(question)]
     .filter(Boolean).join("\n\n");
 }
 
@@ -8891,7 +9005,7 @@ function renderTeacherVisits(){
           return `<div class="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div class="min-w-0">
               <p class="font-semibold text-sm">${s?s.name:"(siswa dihapus)"} <span class="text-on-surface-variant font-normal">${s?`• Kelas ${s.kelas||"-"}`:""}</span></p>
-              <p class="text-xs text-on-surface-variant mt-0.5">Hari <b>${v.day}</b> pukul <b>${v.time}</b> • ${v.keperluan}</p>
+              <p class="text-xs text-on-surface-variant mt-0.5">Hari <b>${v.day}${v.date ? ", "+formatDate(v.date) : ""}</b> pukul <b>${v.time}</b> • ${v.keperluan}</p>
               <p class="text-xs text-on-surface-variant mt-0.5">Diajukan oleh ${v.requestedBy||"-"} • ${formatDate(v.createdAt)}</p>
             </div>
             <div class="flex items-center gap-2 shrink-0 flex-wrap">
@@ -9152,10 +9266,7 @@ function renderParentVisits(){
       <h4 class="font-display font-bold mb-1">Ajukan Jadwal Kunjungan</h4>
       <p class="text-xs text-on-surface-variant mb-4">Beri tahu kami rencana besuk Anda untuk ${s.name}.</p>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <select id="visit-day" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none">
-          <option value="" disabled selected>Pilih Hari</option>
-          ${HARI_OPTIONS.map(h=>`<option value="${h}">${h}</option>`).join("")}
-        </select>
+        <input id="visit-date" type="date" min="${todayISO()}" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
         <input id="visit-time" type="time" class="px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
       </div>
       <textarea id="visit-keperluan" rows="1" placeholder="Keperluan kunjungan (cth. Mengantar bekal & menjenguk)" class="autogrow-input w-full mt-3 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
@@ -9167,7 +9278,7 @@ function renderParentVisits(){
         ${myVisits.map(v=>`
           <div class="px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <p class="text-sm font-medium">Hari ${v.day} pukul ${v.time}</p>
+              <p class="text-sm font-medium">Hari ${v.day}${v.date ? ", "+formatDate(v.date) : ""} pukul ${v.time}</p>
               <p class="text-xs text-on-surface-variant">${v.keperluan}</p>
             </div>
             ${statusBadge(v.status)}
@@ -9179,11 +9290,13 @@ function renderParentVisits(){
 }
 
 async function submitVisit(){
-  const day = document.getElementById("visit-day").value;
+  const date = document.getElementById("visit-date").value;
   const time = document.getElementById("visit-time").value;
   const keperluan = document.getElementById("visit-keperluan").value.trim();
-  if(!day || !time || !keperluan){ toast("Lengkapi hari, jam, dan keperluan kunjungan.", "error"); return; }
-  await addVisitRequest({ studentId: currentStudent.id, day, time, keperluan, requestedBy: `Orang tua ${currentStudent.name}` });
+  if(!date || !time || !keperluan){ toast("Lengkapi tanggal, jam, dan keperluan kunjungan.", "error"); return; }
+  if(date < todayISO()){ toast("Tanggal kunjungan tidak boleh sebelum hari ini.", "error"); return; }
+  const day = dayNameFromISO(date);
+  await addVisitRequest({ studentId: currentStudent.id, day, date, time, keperluan, requestedBy: `Orang tua ${currentStudent.name}` });
   toast("Permohonan kunjungan terkirim.");
   renderParentVisits();
 }

@@ -8515,6 +8515,135 @@ function buildHafalanContext(question){
   return lines.join("\n");
 }
 
+
+/* ===== Konteks data untuk AI (pembayaran & pelanggaran) ===== */
+function aiPeriodFromQuestion(q){
+  let from = todayISO(-30), to = todayISO(), label = "30 hari terakhir";
+  if(/hari ini/.test(q)){ from = todayISO(); label = "hari ini"; }
+  else if(/minggu/.test(q)){ from = todayISO(-7); label = "7 hari terakhir"; }
+  else if(/bulan ini|1 bulan|sebulan|bulan/.test(q)){
+    const d = new Date(); from = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-01"; label = "bulan ini";
+  }
+  else if(/tahun/.test(q)){ from = new Date().getFullYear()+"-01-01"; label = "tahun ini"; }
+  else if(/semua|seluruh|sejak/.test(q)){ from = "0000-00-00"; label = "seluruh data"; }
+  return { from, to, label };
+}
+
+function buildPaymentContext(question){
+  const q = String(question||"").toLowerCase();
+  const wantsPay = /bayar|spp|tunggak|nunggak|lunas|iuran|infaq|infak|uang|pembayaran/.test(q)
+    || (/menyetor/.test(q) && !/hafal|ayat|surah/.test(q));
+  if(!wantsPay || !DB) return "";
+
+  const now = new Date();
+  const curY = now.getFullYear(), curM = now.getMonth();
+  let monthKeys = [monthKey(curY, curM)], label = "bulan ini ("+monthKey(curY, curM)+")";
+  if(/bulan lalu/.test(q)){
+    const d = new Date(curY, curM-1, 1); monthKeys = [monthKey(d.getFullYear(), d.getMonth())]; label = "bulan lalu ("+monthKeys[0]+")";
+  } else if(/tahun/.test(q) || /semua|seluruh|sejak/.test(q)){
+    monthKeys = []; for(let m=0;m<=curM;m++) monthKeys.push(monthKey(curY, m)); label = "tahun ini ("+monthKeys[0]+" s/d "+monthKeys[monthKeys.length-1]+")";
+  }
+
+  const students = DB.students || [];
+  const rp = n => (typeof formatRupiah === "function") ? formatRupiah(n) : "Rp"+n;
+  let totalArrears = 0, unpaidCount = 0, noFeeCount = 0;
+  const rows = [];
+  students.forEach(st=>{
+    const unpaid = monthKeys.filter(mk => paymentStatus(st.id, mk) !== "paid");
+    if(!unpaid.length) return;
+    unpaidCount++;
+    const fee = studentMonthlyFee(st.id);
+    const owed = fee * unpaid.length;
+    if(!fee) noFeeCount++;
+    totalArrears += owed;
+    rows.push({ name:st.name, kelas:st.kelas||"-", unpaid, fee, owed });
+  });
+  rows.sort((a,b)=> b.owed - a.owed || b.unpaid.length - a.unpaid.length);
+
+  const paidRevenue = students.reduce((sum,st)=> sum + monthKeys.reduce((n,mk)=> n + (paymentStatus(st.id, mk)==="paid" ? paymentAmountPaid(st.id, mk) : 0), 0), 0);
+  const infaqTotal = infaqAmountForMonths(monthKeys);
+  const infaqList = (DB.infaq||[]).filter(r => r.date && monthKeys.includes(r.date.slice(0,7)))
+    .sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+
+  const lines = [];
+  lines.push("DATA PEMBAYARAN SIBEST (periode: "+label+")");
+  lines.push("Catatan: pembayaran bulanan dicatat PER BULAN (status Lunas atau Belum), bukan per hari. Infaq dicatat terpisah atas nama pemberi infaq dan bukan tunggakan.");
+  lines.push("Jumlah santri: "+students.length+". Belum lunas: "+unpaidCount+" santri. Lunas: "+(students.length-unpaidCount)+" santri.");
+  lines.push("Total tunggakan bulanan: "+rp(totalArrears)+(noFeeCount ? " (belum termasuk "+noFeeCount+" santri yang Bayaran/Bln-nya belum diisi)" : "")+".");
+  lines.push("Uang bulanan yang sudah masuk (Lunas): "+rp(paidRevenue)+". Total infaq masuk pada periode: "+rp(infaqTotal)+".");
+  lines.push("");
+  lines.push("SANTRI YANG BELUM LUNAS — format: nama | kelas | bulan yang belum lunas | tunggakan");
+  rows.slice(0,80).forEach(r=> lines.push("- "+r.name+" | "+r.kelas+" | "+r.unpaid.join(", ")+" | "+(r.fee ? rp(r.owed) : "nominal belum diatur")));
+  if(rows.length > 80) lines.push("(dan "+(rows.length-80)+" santri lainnya tidak ditampilkan)");
+  if(infaqList.length){
+    lines.push("");
+    lines.push("DAFTAR INFAQ pada periode (maks 20 terbaru):");
+    infaqList.slice(0,20).forEach(r=> lines.push("- "+r.date+" | "+(r.name||"-")+" | "+rp(r.amount)+(r.keterangan ? " | "+r.keterangan : "")));
+  }
+  return lines.join("\n");
+}
+
+function buildViolationContext(question){
+  const q = String(question||"").toLowerCase();
+  if(!/pelanggaran|melanggar|poin|hukuman|sanksi|disiplin|nakal/.test(q) || !DB) return "";
+
+  const { from, to, label } = aiPeriodFromQuestion(q);
+  const types = DB.violationTypes || [];
+  const typeById = id => types.find(t=>t.id===id);
+  const students = DB.students || [];
+  const records = (DB.violationRecords || []).filter(r => r.date && r.date >= from && r.date <= to);
+
+  const lines = [];
+  lines.push("DATA PELANGGARAN SIBEST (periode: "+label+", "+from+" s/d "+to+")");
+  lines.push("Total catatan pelanggaran pada periode: "+records.length+".");
+
+  const named = students.filter(st => st.name && q.includes(st.name.toLowerCase()));
+  if(named.length){
+    named.slice(0,3).forEach(st=>{
+      const mine = records.filter(r=>r.studentId===st.id).sort((a,b)=> (b.date+" "+(b.time||"")).localeCompare(a.date+" "+(a.time||"")));
+      const pts = mine.reduce((n,r)=> n + (Number((typeById(r.typeId)||{}).points)||0), 0);
+      lines.push("");
+      lines.push("SANTRI: "+st.name+" (kelas "+(st.kelas||"-")+") — "+mine.length+" catatan, total poin "+pts+".");
+      mine.slice(0,30).forEach(r=>{
+        const t = typeById(r.typeId)||{};
+        lines.push("- "+r.date+" "+(r.time||"")+": "+(t.name||"jenis tidak diketahui")+" ("+(t.points||0)+" poin)"+(r.note ? " — "+String(r.note).slice(0,100) : ""));
+      });
+    });
+    return lines.join("\n");
+  }
+
+  // Per santri
+  const per = {};
+  records.forEach(r=>{
+    const t = typeById(r.typeId)||{};
+    const st = students.find(x=>x.id===r.studentId);
+    const key = r.studentId;
+    const o = per[key] = per[key] || { name: st?st.name:"(santri dihapus)", kelas: st?(st.kelas||"-"):"-", count:0, points:0 };
+    o.count++; o.points += Number(t.points)||0;
+  });
+  const ranked = Object.values(per).sort((a,b)=> b.points-a.points || b.count-a.count);
+  lines.push("");
+  lines.push("SANTRI DENGAN PELANGGARAN (urut poin terbanyak) — format: nama | kelas | jumlah catatan | total poin");
+  ranked.slice(0,40).forEach(o=> lines.push("- "+o.name+" | "+o.kelas+" | "+o.count+"x | "+o.points+" poin"));
+  lines.push("Santri tanpa catatan pelanggaran pada periode: "+(students.length - ranked.length)+" dari "+students.length+".");
+
+  // Jenis pelanggaran paling sering
+  const byType = {};
+  records.forEach(r=>{ const t=typeById(r.typeId)||{name:"jenis tidak diketahui", points:0}; byType[t.name]=(byType[t.name]||0)+1; });
+  const topTypes = Object.entries(byType).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  if(topTypes.length){
+    lines.push("");
+    lines.push("JENIS PELANGGARAN PALING SERING:");
+    topTypes.forEach(([n,c])=> lines.push("- "+n+": "+c+"x"));
+  }
+  return lines.join("\n");
+}
+
+function buildAIContext(question){
+  return [buildHafalanContext(question), buildPaymentContext(question), buildViolationContext(question)]
+    .filter(Boolean).join("\n\n");
+}
+
 async function askSchoolAI(){
   const input = document.getElementById("school-ai-input");
   const sendBtn = document.getElementById("school-ai-send");
@@ -8548,7 +8677,7 @@ async function askSchoolAI(){
         agentId:agent.id,
         agentName:agent.name,
         systemPrompt:agent.prompt,
-        context:"SIBEST / SMK Muhammadiyah Kendari" + (function(){ try{ const c = buildHafalanContext(text); return c ? "\n\n"+c : ""; }catch(e){ console.error(e); return ""; } })()
+        context:"SIBEST / SMK Muhammadiyah Kendari" + (function(){ try{ const c = buildAIContext(text); return c ? "\n\n"+c : ""; }catch(e){ console.error(e); return ""; } })()
       })
     });
     let data = null;

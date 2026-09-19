@@ -77,6 +77,15 @@ tailwind.config = {
   /* Kotak isian teks (nama, keperluan, catatan, dll) melebar ke bawah saat teks panjang,
      bukan menggeser ke samping. */
   textarea.autogrow-input { resize: none; overflow: hidden; line-height: 1.4; font-family: inherit; box-sizing: border-box; min-height: 2.5rem; }
+
+  /* ===== AI AGENCY ===== */
+  .ai-agency-gradient { background: linear-gradient(135deg, #0f6b3c 0%, #2e9254 55%, #5c6b12 100%); }
+  .ai-agent-card { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+  .ai-agent-card:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(15,107,60,.12); }
+  .ai-agent-card.ai-agent-selected { border-color: #0f6b3c; box-shadow: 0 0 0 2px rgba(15,107,60,.12); }
+  .ai-chat-bubble { white-space: pre-wrap; }
+  .ai-chat-bubble p { margin: 0; }
+
   /* Akses SIBEST: kartu menu hijau dengan teks/grafik putih saat dipilih. */
   .public-gateway-menu:hover b,
   .public-gateway-menu:hover span,
@@ -8277,6 +8286,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "izin", icon: "assignment_turned_in", label: "Perizinan Santri" },
   { id: "laporan", icon: "summarize", label: "Laporan" },
   { id: "control", icon: "qr_code_2", label: "Kontrol" },
+  { id: "ai-agency", icon: "smart_toy", label: "AI Agency" },
 ];
 
 // Dipakai baik oleh navigasi manual (teacherGo) maupun oleh sinkronisasi real-time
@@ -8293,7 +8303,297 @@ const TEACHER_RENDERERS = {
   izin: () => renderTeacherIzin(),
   laporan: () => renderTeacherLaporan(),
   control: () => renderTeacherControl(),
+  "ai-agency": () => renderTeacherAIAgency(),
 };
+
+
+/* =========================================================
+   TEACHER: AI AGENCY SEKOLAH
+   Catatan keamanan:
+   - Halaman ini tidak menanam API key AI di HTML.
+   - Jika backend AI tersedia, set URL-nya pada Pengaturan API.
+   - Tanpa backend, tombol "Salin Prompt" tetap dapat dipakai
+     untuk mengirim pekerjaan ke AI pilihan pengguna.
+   ========================================================= */
+const SCHOOL_AI_AGENTS = [
+  {
+    id:"admin",
+    icon:"admin_panel_settings",
+    name:"AI Admin Sekolah",
+    desc:"Surat, pengumuman, SOP, notulen, dan administrasi.",
+    prompt:"Anda adalah AI Admin Sekolah SMK Muhammadiyah Kendari. Bantu pekerjaan administrasi secara rapi, formal, jelas, dan siap dipakai."
+  },
+  {
+    id:"academic",
+    icon:"school",
+    name:"AI Akademik",
+    desc:"Materi, soal, kisi-kisi, rubrik, dan evaluasi.",
+    prompt:"Anda adalah AI Akademik sekolah. Bantu guru membuat materi, soal, kisi-kisi, rubrik, dan evaluasi dengan bahasa Indonesia yang jelas."
+  },
+  {
+    id:"design",
+    icon:"palette",
+    name:"AI Desain & Konten",
+    desc:"Konsep poster, brosur, spanduk, caption, dan kampanye.",
+    prompt:"Anda adalah AI Desain & Konten sekolah. Buat konsep visual, teks poster, brosur, spanduk, caption, dan susunan konten yang modern dan mudah dipahami."
+  },
+  {
+    id:"research",
+    icon:"travel_explore",
+    name:"AI Research",
+    desc:"Riset, ringkasan, perbandingan, dan penyusunan informasi.",
+    prompt:"Anda adalah AI Research sekolah. Bantu merumuskan pertanyaan, menganalisis informasi, merangkum sumber, dan menyajikan hasil secara terstruktur."
+  },
+  {
+    id:"finance",
+    icon:"account_balance",
+    name:"AI Keuangan",
+    desc:"Analisis pemasukan, pengeluaran, anggaran, dan laporan.",
+    prompt:"Anda adalah AI Keuangan sekolah. Bantu membaca data keuangan, membuat ringkasan, anggaran, dan laporan secara hati-hati. Jangan mengarang angka."
+  },
+  {
+    id:"student",
+    icon:"psychology",
+    name:"AI Pendamping Siswa",
+    desc:"Pendampingan belajar, rencana belajar, dan motivasi.",
+    prompt:"Anda adalah AI Pendamping Siswa. Bantu membuat rencana belajar, menjelaskan pelajaran, dan memberi saran belajar yang praktis dan aman."
+  },
+  {
+    id:"project",
+    icon:"task_alt",
+    name:"AI Project Manager",
+    desc:"Rencana kerja, pembagian tugas, timeline, dan checklist.",
+    prompt:"Anda adalah AI Project Manager sekolah. Ubah tujuan menjadi rencana kerja, tugas, penanggung jawab, deadline, risiko, dan checklist."
+  },
+  {
+    id:"developer",
+    icon:"code",
+    name:"AI Developer",
+    desc:"Website, HTML, JavaScript, Firebase, dan otomasi.",
+    prompt:"Anda adalah AI Developer. Bantu mengembangkan dan memperbaiki HTML, CSS, JavaScript, Firebase, serta otomasi dengan kode yang aman dan mudah dirawat."
+  }
+];
+
+let selectedSchoolAIAgent = "admin";
+let schoolAIHistory = [];
+
+function schoolAIAgentById(id){
+  return SCHOOL_AI_AGENTS.find(a=>a.id===id) || SCHOOL_AI_AGENTS[0];
+}
+
+function selectSchoolAIAgent(id){
+  selectedSchoolAIAgent = id;
+  renderTeacherAIAgency();
+}
+
+function schoolAISettings(){
+  const current = localStorage.getItem("sibestAiEndpoint") || "";
+  const endpoint = prompt(
+    "Masukkan URL backend AI Anda.\n\nContoh: https://domain-anda.com/api/ai\n\nKosongkan untuk menghapus endpoint.",
+    current
+  );
+  if(endpoint === null) return;
+  if(endpoint.trim()) localStorage.setItem("sibestAiEndpoint", endpoint.trim());
+  else localStorage.removeItem("sibestAiEndpoint");
+  toast(endpoint.trim() ? "Endpoint AI tersimpan di perangkat ini." : "Endpoint AI dihapus.");
+  renderTeacherAIAgency();
+}
+
+function buildSchoolAIPrompt(userText){
+  const agent = schoolAIAgentById(selectedSchoolAIAgent);
+  return `${agent.prompt}
+
+Konteks aplikasi: SIBEST / SMK Muhammadiyah Kendari.
+Tugas pengguna:
+${userText}
+
+Berikan jawaban dalam bahasa Indonesia. Jika membuat dokumen, gunakan struktur yang siap disalin dan diedit.`;
+}
+
+async function copySchoolAIPrompt(){
+  const input = document.getElementById("school-ai-input");
+  const text = (input?.value || "").trim();
+  if(!text){ toast("Tulis tugas AI terlebih dahulu.", "error"); return; }
+  const promptText = buildSchoolAIPrompt(text);
+  try{
+    await navigator.clipboard.writeText(promptText);
+    toast("Prompt AI berhasil disalin.");
+  }catch(e){
+    const ta=document.createElement("textarea");
+    ta.value=promptText; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+    toast("Prompt AI berhasil disalin.");
+  }
+}
+
+async function askSchoolAI(){
+  const input = document.getElementById("school-ai-input");
+  const sendBtn = document.getElementById("school-ai-send");
+  const text = (input?.value || "").trim();
+  if(!text){ toast("Tulis pertanyaan atau tugas terlebih dahulu.", "error"); return; }
+
+  const agent = schoolAIAgentById(selectedSchoolAIAgent);
+  const endpoint = localStorage.getItem("sibestAiEndpoint") || "";
+  schoolAIHistory.push({role:"user", agent:agent.name, text});
+  if(input) input.value = "";
+
+  if(!endpoint){
+    schoolAIHistory.push({
+      role:"assistant",
+      agent:"Mode siap pakai",
+      text:`${agent.name} sudah dipilih.\n\nWebsite ini belum diberi URL backend AI, jadi saya tidak menjalankan model AI dari browser secara langsung.\n\nGunakan tombol "Salin Prompt" untuk mengirim tugas ini ke AI pilihan Anda, atau buka Pengaturan API untuk memasang backend AI yang aman.`
+    });
+    renderTeacherAIAgency();
+    return;
+  }
+
+  if(sendBtn){ sendBtn.disabled=true; sendBtn.innerHTML='<span class="material-symbols-outlined animate-spin">progress_activity</span>Memproses...'; }
+  renderTeacherAIAgency();
+
+  try{
+    const response = await fetch(endpoint, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        message:text,
+        agentId:agent.id,
+        agentName:agent.name,
+        systemPrompt:agent.prompt,
+        context:"SIBEST / SMK Muhammadiyah Kendari"
+      })
+    });
+    if(!response.ok) throw new Error("HTTP "+response.status);
+    const data = await response.json();
+    const answer = data.answer || data.output || data.message || data.text;
+    if(!answer) throw new Error("Respons backend tidak memiliki field answer/output/message/text.");
+    schoolAIHistory.push({role:"assistant", agent:agent.name, text:String(answer)});
+  }catch(err){
+    console.error(err);
+    schoolAIHistory.push({
+      role:"assistant",
+      agent:"AI Agency",
+      text:"Backend AI belum dapat dihubungi.\n\nPeriksa URL endpoint dan pastikan backend menerima POST JSON dengan field: message, agentId, agentName, systemPrompt, context."
+    });
+  }finally{
+    renderTeacherAIAgency();
+  }
+}
+
+function clearSchoolAIChat(){
+  schoolAIHistory=[];
+  renderTeacherAIAgency();
+}
+
+function renderTeacherAIAgency(){
+  const el = document.getElementById("teacher-content");
+  if(!el) return;
+  const endpoint = localStorage.getItem("sibestAiEndpoint") || "";
+  const agent = schoolAIAgentById(selectedSchoolAIAgent);
+
+  el.innerHTML = `
+    <div class="space-y-5">
+      <section class="ai-agency-gradient rounded-2xl p-5 md:p-7 text-white shadow-lg">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span class="material-symbols-outlined text-2xl">smart_toy</span>
+              <span class="text-xs font-bold uppercase tracking-wider opacity-90">AI Agency</span>
+            </div>
+            <h2 class="font-display text-2xl md:text-3xl font-extrabold">Asisten AI Sekolah</h2>
+            <p class="mt-1 text-sm opacity-90 max-w-2xl">Satu tempat untuk memilih AI spesialis sesuai pekerjaan sekolah Anda.</p>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            <button onclick="schoolAISettings()" class="bg-white/15 hover:bg-white/25 border border-white/25 rounded-lg px-3 py-2 text-sm font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[18px]">settings</span>Pengaturan API
+            </button>
+            <button onclick="clearSchoolAIChat()" class="bg-white text-primary rounded-lg px-3 py-2 text-sm font-semibold flex items-center gap-1">
+              <span class="material-symbols-outlined text-[18px]">delete_sweep</span>Bersihkan
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-4 md:p-5">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h3 class="font-display font-bold">Pilih Spesialis AI</h3>
+            <p class="text-xs text-on-surface-variant mt-0.5">Agent di sini menggunakan peran khusus yang terinspirasi konsep Agency Agents.</p>
+          </div>
+          <span class="text-xs px-2.5 py-1 rounded-full ${endpoint ? "bg-secondary-container text-on-secondary-container" : "bg-surface-container text-on-surface-variant"}">
+            ${endpoint ? "Backend AI terhubung" : "Mode prompt / belum ada backend"}
+          </span>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          ${SCHOOL_AI_AGENTS.map(a=>`
+            <button type="button" onclick="selectSchoolAIAgent('${a.id}')"
+              class="ai-agent-card text-left rounded-xl border p-3 bg-white ${a.id===selectedSchoolAIAgent ? "ai-agent-selected" : "border-outline-variant"}">
+              <div class="w-9 h-9 rounded-lg bg-primary-fixed text-primary flex items-center justify-center mb-2">
+                <span class="material-symbols-outlined">${a.icon}</span>
+              </div>
+              <div class="text-sm font-bold">${escapeHtml(a.name)}</div>
+              <div class="text-[11px] text-on-surface-variant mt-1 leading-4">${escapeHtml(a.desc)}</div>
+            </button>`).join("")}
+        </div>
+      </section>
+
+      <section class="grid lg:grid-cols-[1fr_320px] gap-5">
+        <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant overflow-hidden">
+          <div class="px-4 py-3 border-b border-outline-variant flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary">${agent.icon}</span>
+              <div>
+                <h3 class="font-display font-bold text-sm">${escapeHtml(agent.name)}</h3>
+                <p class="text-[11px] text-on-surface-variant">${escapeHtml(agent.desc)}</p>
+              </div>
+            </div>
+            <button onclick="copySchoolAIPrompt()" class="text-xs font-semibold text-primary hover:underline flex items-center gap-1">
+              <span class="material-symbols-outlined text-[16px]">content_copy</span>Salin Prompt
+            </button>
+          </div>
+          <div class="min-h-[280px] max-h-[520px] overflow-y-auto custom-scrollbar p-4 space-y-3" id="school-ai-chat">
+            ${schoolAIHistory.length ? schoolAIHistory.map(m=>`
+              <div class="flex ${m.role==="user" ? "justify-end" : "justify-start"}">
+                <div class="max-w-[90%] rounded-2xl px-4 py-3 ${m.role==="user" ? "bg-primary text-white rounded-br-sm" : "bg-surface-container text-on-surface rounded-bl-sm"}">
+                  <div class="text-[10px] font-bold opacity-70 mb-1">${escapeHtml(m.role==="user" ? "Anda" : m.agent)}</div>
+                  <div class="text-sm leading-6 ai-chat-bubble">${escapeHtml(m.text)}</div>
+                </div>
+              </div>`).join("") :
+              `<div class="h-[250px] flex items-center justify-center text-center text-on-surface-variant">
+                <div>
+                  <span class="material-symbols-outlined text-4xl opacity-40">auto_awesome</span>
+                  <p class="font-semibold mt-2">Mulai percakapan dengan ${escapeHtml(agent.name)}</p>
+                  <p class="text-xs mt-1 max-w-sm">Contoh: "Buatkan surat undangan rapat orang tua siswa dengan bahasa formal."</p>
+                </div>
+              </div>`}
+          </div>
+          <div class="p-3 border-t border-outline-variant">
+            <textarea id="school-ai-input" rows="3" class="autogrow-input w-full rounded-xl border border-outline-variant px-3 py-2 text-sm outline-none focus:border-primary" placeholder="Tulis tugas untuk AI..." onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();askSchoolAI();}"></textarea>
+            <div class="flex items-center justify-between gap-2 mt-2">
+              <p class="text-[10px] text-on-surface-variant">Enter = kirim • Shift+Enter = baris baru</p>
+              <button id="school-ai-send" onclick="askSchoolAI()" class="bg-primary text-on-primary rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-1 hover:shadow-md">
+                <span class="material-symbols-outlined text-[18px]">send</span>Kirim
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-4 h-fit">
+          <h3 class="font-display font-bold text-sm">Cara kerja</h3>
+          <ol class="mt-3 space-y-3 text-xs text-on-surface-variant">
+            <li class="flex gap-2"><span class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shrink-0 text-[10px] font-bold">1</span><span>Pilih spesialis sesuai pekerjaan.</span></li>
+            <li class="flex gap-2"><span class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shrink-0 text-[10px] font-bold">2</span><span>Tulis tugas atau pertanyaan.</span></li>
+            <li class="flex gap-2"><span class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shrink-0 text-[10px] font-bold">3</span><span>Jika backend AI belum dipasang, salin prompt ke AI pilihan Anda.</span></li>
+            <li class="flex gap-2"><span class="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shrink-0 text-[10px] font-bold">4</span><span>Jika backend tersedia, jawaban akan kembali langsung ke halaman ini.</span></li>
+          </ol>
+          <div class="mt-4 rounded-xl bg-tertiary-fixed/50 p-3">
+            <p class="text-[11px] font-semibold text-on-tertiary-fixed">Keamanan</p>
+            <p class="text-[10px] text-on-surface-variant mt-1 leading-4">Jangan menaruh API key AI rahasia langsung di file HTML. Gunakan backend/proxy server.</p>
+          </div>
+        </aside>
+      </section>
+    </div>
+  `;
+}
 
 function renderTeacherNav(){
   const linkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-outline hover:text-white hover:bg-white/10 transition-colors";
@@ -8348,8 +8648,9 @@ function teacherGo(page){
   setActiveNav(page);
   closeTeacherMobileNav();
   const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Kontrol" };
-  document.getElementById("teacher-page-title").textContent = titles[page];
-  TEACHER_RENDERERS[page]();
+  document.getElementById("teacher-page-title").textContent = titles[page] || page;
+  if (TEACHER_RENDERERS[page]) TEACHER_RENDERERS[page]();
+  else { document.getElementById("teacher-content").innerHTML = `<div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant">Halaman belum tersedia.</div>`; }
 }
 
 /* =========================================================

@@ -277,6 +277,33 @@ tailwind.config = {
   </div>
 </div>
 
+
+<!-- ============ KWITANSI PEMBAYARAN MODAL ============ -->
+<div id="kwitansi-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4 py-6 overflow-y-auto" onclick="if(event.target===this) closeKwitansiModal()">
+  <div class="relative w-full max-w-3xl my-auto fade-in bg-surface-container-lowest rounded-2xl p-5 sm:p-6">
+    <button onclick="closeKwitansiModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-1">Kwitansi Pembayaran</h4>
+    <p class="text-xs text-on-surface-variant mb-4">Bukti pembayaran resmi. Bisa langsung dicetak, diunduh sebagai PDF, atau dikirim ke orang tua lewat WhatsApp.</p>
+    <div id="kwitansi-preview-wrap" class="bg-white rounded-xl border border-outline-variant overflow-hidden">
+      <div id="kwitansi-preview" style="width:794px; transform-origin: top left;"></div>
+    </div>
+    <div class="flex flex-col sm:flex-row gap-3 mt-5">
+      <button onclick="closeKwitansiModal()" class="sm:w-28 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Tutup</button>
+      <button onclick="printKwitansi()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all flex items-center justify-center gap-1">
+        <span class="material-symbols-outlined text-[18px]">print</span>Cetak
+      </button>
+      <button id="kwitansi-download-btn" onclick="downloadKwitansiPdf()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant hover:shadow transition-all flex items-center justify-center gap-1">
+        <span class="material-symbols-outlined text-[18px]">picture_as_pdf</span>Unduh PDF
+      </button>
+      <button id="kwitansi-send-btn" onclick="sendKwitansiToParent()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1">
+        <span class="material-symbols-outlined text-[18px]">send</span>Kirim ke Orang Tua
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ EDIT JENIS PELANGGARAN MODAL ============ -->
 <div id="edit-vt-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditViolationTypeModal()">
   <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
@@ -855,7 +882,7 @@ tailwind.config = {
         </div>
         <div class="flex items-center gap-3">
           <button onclick="openTeacherProfileModal()" class="flex items-center gap-3 hover:opacity-80 transition-opacity" title="Edit profil saya">
-            <span class="text-sm text-on-surface-variant hidden sm:block">Halo, <span id="teacher-name-display" class="font-semibold text-on-surface"></span></span>
+            <span class="text-sm text-on-surface-variant hidden sm:block">Halo, <span id="teacher-name-display" class="font-semibold text-on-surface"></span><span id="teacher-role-badge" class="ml-1 align-middle text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant"></span></span>
             <div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-semibold text-sm overflow-hidden" id="teacher-avatar"></div>
           </button>
           <button onclick="teacherLogout()" class="md:hidden text-on-surface-variant"><span class="material-symbols-outlined">logout</span></button>
@@ -3418,6 +3445,8 @@ async function loadDB(){
       if (!DB.infaq) DB.infaq = [];
       if (!DB.violationReports) DB.violationReports = [];
       if (!DB.hafalanReports) DB.hafalanReports = [];
+      if (!DB.activityLog) DB.activityLog = [];
+      if (!DB.kwitansiCounter) DB.kwitansiCounter = 0;
       if (!DB.settings) DB.settings = { parentToken: genToken() };
       if (!DB.settings.parentToken) DB.settings.parentToken = genToken();
       if (!DB.settings.reportToken) DB.settings.reportToken = genToken();
@@ -3434,11 +3463,13 @@ async function loadDB(){
         needSave = true;
       }
       DB.students.forEach(s=>{ if(!s.token){ s.token = genToken(); needSave = true; } });
+      auditResetSnapshot(DB); // migrasi di atas bukan "perubahan pengguna", jangan dicatat
       if (needSave) await saveDB();
       return;
     }
   } catch(e) { console.error("Gagal memuat data:", e); }
   DB = seedData();
+  auditResetSnapshot(DB);
   await saveDB();
 }
 
@@ -3493,6 +3524,8 @@ document.addEventListener("click", event=>{
 
 async function saveDB(){
   markSaveButtonsInFlight();
+  // Catat dulu apa yang berubah (siapa, apa, kapan) sebelum data dikirim ke server.
+  try { auditRecordChanges(); } catch(e) { console.error("Audit log gagal:", e); }
   try {
     await window.fb.set(window.fb.ref(window.fb.db, "edusyncData"), {
       json: JSON.stringify(DB),
@@ -3519,6 +3552,8 @@ async function saveDBFresh(mutator){
     if (snap.exists() && snap.val().json) {
       try { fresh = JSON.parse(snap.val().json); } catch(e) { fresh = DB; }
     }
+    // Bandingkan terhadap data TERBARU dari server, bukan salinan lokal yang bisa usang.
+    auditResetSnapshot(fresh);
     mutator(fresh);
     DB = fresh;
     await saveDB();
@@ -3548,6 +3583,8 @@ function attachRealtimeSync(){
     try {
       DB = JSON.parse(snap.val().json);
     } catch(e){ return; }
+    // Perubahan ini datang dari perangkat lain — jadikan patokan baru, jangan dicatat ulang.
+    auditResetSnapshot(DB);
     refreshCurrentView();
   });
 }
@@ -3565,6 +3602,7 @@ function refreshCurrentView(){
   if(activeScreen.id === "screen-teacher"){
     const fn = TEACHER_RENDERERS[currentTeacherPage];
     if(fn) fn();
+    setTimeout(applyRoleVisibility, 0);
   } else if(activeScreen.id === "screen-parent" && currentStudent){
     // pastikan data siswa yang sedang login masih ada & sinkron
     const fresh = studentById(currentStudent.id);
@@ -3879,6 +3917,43 @@ function notifyViolationWhatsApp(student, type, date, time, note){
   const phone = formatPhoneForWa(student.parentPhone);
   if(!phone) return;
   const message = buildViolationWhatsAppMessage(student, type, date, time, note);
+  const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  const win = window.open(url, "_blank", "noopener");
+  if(!win || win.closed || typeof win.closed === "undefined"){
+    showWaFallbackLink(url, student.parentPhone);
+  } else {
+    toast(`Jendela WhatsApp dibuka untuk ${student.parentPhone}. Klik "Kirim" di WhatsApp.`);
+  }
+}
+
+function buildPaymentReminderWhatsAppMessage(student, mKey, owed){
+  const label = MONTHS_ID[parseInt(mKey.split("-")[1])-1] + " " + mKey.split("-")[0];
+  return [
+    `*Pengingat Pembayaran Bulanan Santri*`,
+    `Assalamu'alaikum, Bapak/Ibu Wali Santri.`,
+    ``,
+    `Nama Santri: ${student.name}`,
+    `Bulan: ${label}`,
+    `Tunggakan: ${formatRupiah(owed)}`,
+    ``,
+    `Mohon kesediaannya untuk segera melunasi tunggakan bulanan santri di atas. Terima kasih atas perhatian dan kerja samanya.`,
+    `— SMK Maritim Muhammadiyah Kendari`,
+  ].join("\n");
+}
+
+// Tombol di tabel Pembayaran: siapkan pesan pengingat tunggakan lalu buka WhatsApp
+// dengan nomor & pesan sudah terisi (admin/guru tetap harus klik "Kirim" sendiri).
+function remindPaymentWhatsApp(studentId, mKey){
+  const student = studentById(studentId);
+  if(!student){ toast("Data siswa tidak ditemukan.", "error"); return; }
+  if(!student.parentPhone){ toast("Siswa ini belum punya No. WA orang tua.", "error"); return; }
+  const phone = formatPhoneForWa(student.parentPhone);
+  if(!phone){ toast("Nomor WA orang tua tidak valid.", "error"); return; }
+  const due = studentMonthlyFee(studentId);
+  const paid = paymentStatus(studentId, mKey) === "paid";
+  const owed = paid ? Math.max(0, due - paymentAmountPaid(studentId, mKey)) : due;
+  if(owed <= 0){ toast("Bulan ini sudah lunas, tidak ada tunggakan.", "error"); return; }
+  const message = buildPaymentReminderWhatsAppMessage(student, mKey, owed);
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   const win = window.open(url, "_blank", "noopener");
   if(!win || win.closed || typeof win.closed === "undefined"){
@@ -4294,6 +4369,40 @@ async function saveAdminEmail(){
   toast("Email admin/guru disimpan.");
 }
 
+async function saveHafalanTarget(){
+  const v = parseInt(document.getElementById("control-hafalan-target").value, 10);
+  if(!DB.settings) DB.settings = {};
+  DB.settings.hafalanMonthlyTarget = (isNaN(v) || v <= 0) ? 100 : v;
+  await saveDB();
+  toast("Target hafalan bulanan disimpan.");
+}
+
+/* =========================================================
+   CADANGAN DATA (Backup)
+   Satu klik menyimpan seluruh isi database (DB) ke satu file JSON
+   di perangkat admin/guru. Database gratis yang dipakai aplikasi
+   ini tidak punya cadangan otomatis, jadi tombol ini penting untuk
+   dipakai secara rutin.
+   ========================================================= */
+function downloadBackupData(){
+  try {
+    const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g, "-");
+    const blob = new Blob([JSON.stringify(DB, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cadangan-sibest-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast("Cadangan data berhasil diunduh.");
+  } catch(e){
+    console.error("Gagal membuat cadangan data:", e);
+    toast("Gagal membuat cadangan data.", "error");
+  }
+}
+
 function toggleDashboardStudentPicker(event){
   event.stopPropagation();
   const picker = document.getElementById("dashboard-student-picker");
@@ -4540,12 +4649,14 @@ async function setIzinStatus(id, status){
 }
 
 async function deleteVisit(id){
+  if(!requireAdmin("menghapus jadwal kunjungan")) return;
   DB.visits = DB.visits.filter(v=>v.id!==id);
   await saveDB();
   renderTeacherVisits();
 }
 
 async function deleteIzin(id){
+  if(!requireAdmin("menghapus data perizinan")) return;
   DB.izinRequests = DB.izinRequests.filter(r=>r.id!==id);
   await saveDB();
   renderTeacherIzin();
@@ -5019,6 +5130,23 @@ function renderTeacherControl(){
   const el = document.getElementById("teacher-content");
   el.innerHTML = `
     <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl mb-6">
+      <h4 class="font-display font-bold mb-1 flex items-center gap-2"><span class="material-symbols-outlined text-primary">cloud_download</span>Cadangan Data</h4>
+      <p class="text-xs text-on-surface-variant mb-4">Database gratis yang dipakai aplikasi ini tidak memiliki cadangan otomatis. Klik tombol di bawah kapan saja (disarankan rutin) untuk menyimpan seluruh data — siswa, pembayaran, pelanggaran, hafalan, dll — ke satu file di perangkat Anda.</p>
+      <button onclick="downloadBackupData()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4 hover:shadow-md transition-all flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-[18px]">download</span> Unduh Cadangan Data (JSON)
+      </button>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl mb-6">
+      <h4 class="font-display font-bold mb-1">Target Hafalan Bulanan</h4>
+      <p class="text-xs text-on-surface-variant mb-4">Target jumlah ayat setoran per bulan yang dipakai untuk menghitung bar kemajuan hafalan tiap santri di halaman Orang Tua &amp; Santri.</p>
+      <div class="flex flex-col sm:flex-row gap-3">
+        <input id="control-hafalan-target" type="number" min="1" value="${hafalanMonthlyTarget()}" placeholder="cth. 100" class="flex-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+        <button onclick="saveHafalanTarget()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4 hover:shadow-md transition-all">Simpan</button>
+      </div>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-6 max-w-xl mb-6">
       <h4 class="font-display font-bold mb-1">Email Admin/Guru (Notifikasi Izin)</h4>
       <p class="text-xs text-on-surface-variant mb-4">Email ini akan menerima notifikasi setiap ada permohonan izin/kunjungan baru yang diajukan orang tua atau siswa.</p>
       <div class="flex flex-col sm:flex-row gap-3">
@@ -5074,11 +5202,11 @@ function renderTeacherControl(){
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
-              <th class="p-3">Nama</th><th class="p-3">Email</th><th class="p-3">Tgl Daftar</th><th class="p-3"></th>
+              <th class="p-3">Nama</th><th class="p-3">Email</th><th class="p-3">Peran</th><th class="p-3">Tgl Daftar</th><th class="p-3"></th>
             </tr>
           </thead>
           <tbody id="control-teacher-accounts-body">
-            <tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Memuat...</td></tr>
+            <tr><td colspan="5" class="p-4 text-center text-on-surface-variant">Memuat...</td></tr>
           </tbody>
         </table>
       </div>
@@ -5185,6 +5313,7 @@ async function renderPendingTeacherAccountsTable(){
 }
 
 async function approveTeacherAccount(slug){
+  if(!requireAdmin("menyetujui akun guru")) return;
   try{
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug));
     if(!snap.exists()){ toast("Akun tidak ditemukan.", "error"); return; }
@@ -5208,15 +5337,21 @@ async function renderTeacherAccountsTable(){
     const data = snap.exists() ? snap.val() : {};
     const rows = Object.entries(data).filter(([,acc])=>acc.status!=="pending");
     if(rows.length===0){
-      body.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Belum ada guru yang mendaftar.</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" class="p-4 text-center text-on-surface-variant">Belum ada guru yang mendaftar.</td></tr>`;
       return;
     }
     body.innerHTML = rows.map(([slug, acc])=>{
       const tgl = acc.createdAt ? new Date(acc.createdAt).toLocaleDateString("id-ID") : "-";
+      const admin = acc.role === "admin";
+      const sendiri = slug === teacherSlug;
       return `
         <tr class="border-t border-outline-variant hover:bg-surface-container-low">
-          <td class="p-3 font-medium">${escapeHtml(acc.name||"-")}</td>
+          <td class="p-3 font-medium">${escapeHtml(acc.name||"-")}${sendiri?` <span class="text-[10px] text-on-surface-variant font-normal">(Anda)</span>`:""}</td>
           <td class="p-3 text-on-surface-variant">${escapeHtml(acc.email||"-")}</td>
+          <td class="p-3">
+            <span class="text-[11px] font-bold uppercase tracking-wide px-2 py-0.5 rounded ${admin?"bg-primary-fixed text-primary":"bg-surface-container text-on-surface-variant"}">${admin?"Admin":"Guru"}</span>
+            <button onclick="setTeacherAccountRole('${slug}','${admin?"guru":"admin"}')" class="ml-2 text-primary hover:underline text-[11px] font-semibold">${admin?"Jadikan Guru":"Jadikan Admin"}</button>
+          </td>
           <td class="p-3 text-on-surface-variant">${tgl}</td>
           <td class="p-3 text-right whitespace-nowrap">
             <button onclick="resetTeacherAccountPassword('${slug}')" class="text-primary hover:underline text-xs font-semibold mr-3">Reset Sandi</button>
@@ -5231,6 +5366,7 @@ async function renderTeacherAccountsTable(){
 }
 
 async function resetTeacherAccountPassword(slug){
+  if(!requireAdmin("mereset sandi guru")) return;
   const newPassword = prompt("Masukkan sandi baru untuk guru ini (minimal 6 karakter):");
   if(newPassword === null) return;
   if(newPassword.length < 6){ toast("Sandi minimal 6 karakter.", "error"); return; }
@@ -5249,6 +5385,7 @@ async function resetTeacherAccountPassword(slug){
 }
 
 async function deleteTeacherAccount(slug){
+  if(!requireAdmin("mengelola akun guru")) return;
   try{
     const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug));
     if(!snap.exists()){ toast("Akun tidak ditemukan.", "error"); return; }
@@ -5263,7 +5400,7 @@ async function deleteTeacherAccount(slug){
     }
     if(slug === teacherSlug){
       localStorage.removeItem("teacherSessionSlug");
-      teacherName = ""; teacherSlug = "";
+      teacherName = ""; teacherSlug = ""; teacherRole = "guru";
       toast("Akun Anda telah dihapus.");
       goRole("role");
       return;
@@ -5278,6 +5415,7 @@ async function deleteTeacherAccount(slug){
 }
 
 async function regenerateParentToken(){
+  if(!requireAdmin("mengganti barcode")) return;
   const cfg = CONTROL_BARCODE_CONFIGS.parent;
   if(!confirm(cfg.confirmMsg)) return;
   await saveDBFresh(fresh => {
@@ -5289,6 +5427,7 @@ async function regenerateParentToken(){
 }
 
 async function regenerateReportToken(){
+  if(!requireAdmin("mengganti barcode")) return;
   const cfg = CONTROL_BARCODE_CONFIGS.report;
   if(!confirm(cfg.confirmMsg)) return;
   await saveDBFresh(fresh => {
@@ -6094,6 +6233,7 @@ async function addClassOption(){
 }
 
 async function deleteClassOption(name){
+  if(!requireAdmin("menghapus pilihan kelas")) return;
   const affectedStudents = DB.students.filter(s=>s.kelas===name);
   const usedCount = affectedStudents.length;
   const msg = usedCount>0
@@ -6194,6 +6334,7 @@ async function addStudent(){
 }
 
 async function deleteStudent(id){
+  if(!requireAdmin("menghapus data santri")) return;
   if(!confirm("Hapus siswa ini beserta seluruh data pembayaran & pelanggarannya?")) return;
   DB.students = DB.students.filter(s=>s.id!==id);
   DB.payments = DB.payments.filter(p=>p.studentId!==id);
@@ -6399,6 +6540,7 @@ function renderTeacherPayments(){
                   const due = studentMonthlyFee(s.id);
                   const amountPaid = paymentAmountPaid(s.id, m);
                   const shortfall = paid ? Math.max(0, due - amountPaid) : 0;
+                  const owed = paid ? shortfall : due;
                   return `<td class="p-2 text-center align-top">
                     <div class="flex flex-col items-center gap-0.5">
                       <div class="relative">
@@ -6409,9 +6551,17 @@ function renderTeacherPayments(){
                         </button>
                         ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${(shortfall*1000).toLocaleString("id-ID")}</span>` : ""}
                       </div>
-                      <button onmousedown="event.preventDefault()" onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
-                        <span class="material-symbols-outlined text-[16px]">expand_more</span>
-                      </button>
+                      <div class="flex items-center gap-1">
+                        <button onmousedown="event.preventDefault()" onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
+                          <span class="material-symbols-outlined text-[16px]">expand_more</span>
+                        </button>
+                        ${owed > 0 ? `<button onmousedown="event.preventDefault()" onclick="remindPaymentWhatsApp('${s.id}','${m}')" class="text-[#25D366] hover:opacity-70 transition-opacity" title="Kirim pengingat tunggakan via WhatsApp">
+                          <span class="material-symbols-outlined text-[16px]">chat</span>
+                        </button>` : ""}
+                        ${paid ? `<button onmousedown="event.preventDefault()" onclick="openKwitansiModal('${s.id}','${m}')" class="text-primary hover:opacity-70 transition-opacity" title="Cetak / kirim kwitansi pembayaran">
+                          <span class="material-symbols-outlined text-[16px]">receipt_long</span>
+                        </button>` : ""}
+                      </div>
                     </div>
                   </td>`;
                 }).join("")}
@@ -6539,6 +6689,7 @@ async function saveInfaq(){
 }
 
 async function deleteInfaq(id){
+  if(!requireAdmin("menghapus data infaq")) return;
   if(!confirm("Hapus data infaq ini?")) return;
   DB.infaq = (DB.infaq||[]).filter(r=>r.id!==id);
   await saveDB();
@@ -6593,6 +6744,8 @@ async function togglePayment(studentId, mKey){
   }
   await saveDB();
   renderTeacherPayments();
+  // Begitu pembayaran dicatat sebagai lunas, langsung tawarkan kwitansinya.
+  if(newStatus === "paid") openKwitansiModal(studentId, mKey);
 }
 
 function openPaymentAmountModal(studentId, mKey){
@@ -6621,6 +6774,7 @@ async function savePaymentAmount(){
   closePaymentAmountModal();
   renderTeacherPayments();
   toast("Nominal dibayar diperbarui.");
+  if(paymentStatus(studentId, mKey) === "paid") openKwitansiModal(studentId, mKey);
 }
 
 /* =========================================================
@@ -6843,6 +6997,7 @@ async function saveExpenseTotal(){
 }
 
 async function deleteExpense(id){
+  if(!requireAdmin("menghapus data pengeluaran")) return;
   DB.expenses = DB.expenses.filter(e=>e.id!==id);
   await saveDB();
   toast("Pengeluaran dihapus.");
@@ -6896,6 +7051,7 @@ async function addViolationType(){
 }
 
 async function deleteViolationType(id){
+  if(!requireAdmin("menghapus jenis pelanggaran")) return;
   if(!confirm("Hapus jenis pelanggaran ini? Riwayat terkait juga akan terhapus.")) return;
   DB.violationTypes = DB.violationTypes.filter(t=>t.id!==id);
   DB.violationRecords = DB.violationRecords.filter(r=>r.typeId!==id);
@@ -7430,6 +7586,7 @@ async function markReportStatus(id, status){
 // (di menu Catatan Pelanggaran / Riwayat Pelanggaran), catatan itu ikut terhapus otomatis —
 // supaya kedua menu selalu sinkron dan grafik dashboard ikut ter-update.
 async function deleteViolationReport(id){
+  if(!requireAdmin("menghapus laporan pelanggaran")) return;
   if(!confirm("Hapus laporan ini secara permanen? Catatan pelanggaran yang tertaut (jika ada) juga akan ikut terhapus.")) return;
   await saveDBFresh(fresh => {
     const r = (fresh.violationReports || []).find(x=>x.id===id);
@@ -8018,6 +8175,7 @@ async function logViolation(){
 // Laporan Santri (lewat QR "Lapor Pelanggaran Teman"), laporan tsb ikut terhapus juga di
 // menu Laporan Santri — supaya kedua menu selalu sinkron dan grafik dashboard ikut ter-update.
 async function deleteViolationRecord(id){
+  if(!requireAdmin("menghapus catatan pelanggaran")) return;
   if(!confirm("Hapus catatan pelanggaran ini secara permanen? Laporan santri yang tertaut (jika ada) juga akan ikut terhapus.")) return;
   await saveDBFresh(fresh => {
     const record = (fresh.violationRecords || []).find(r=>r.id===id);
@@ -8106,11 +8264,15 @@ function enterTeacherApp(acc, slug){
   const photo = typeof acc === "string" ? null : (acc.photo || null);
   teacherName = name;
   teacherSlug = slug;
+  teacherRole = (typeof acc === "object" && acc && acc.role === "admin") ? "admin" : "guru";
   document.getElementById("teacher-name-display").textContent = name;
+  updateRoleBadge();
   updateTeacherAvatar(name, photo);
   goRole("teacher-app");
   renderTeacherNav();
   teacherGo("dashboard");
+  // Migrasi data lama + sinkronkan peran terbaru dari server.
+  ensureAdminExists().then(()=>refreshTeacherRole());
 }
 
 async function teacherRegister(){
@@ -8142,7 +8304,9 @@ async function teacherRegister(){
     const isFirstAccount = !allSnap.exists() || Object.keys(allSnap.val()||{}).length === 0;
     // status "pending": akun belum bisa dipakai untuk masuk sampai disetujui
     // oleh salah satu guru yang sudah terdaftar, lewat Menu Kontrol > Akun Guru Terdaftar.
-    const acc = { name, email, salt, passwordHash, photo: null, createdAt: new Date().toISOString(), status: isFirstAccount ? "approved" : "pending" };
+    // Pendaftar pertama otomatis menjadi Admin; pendaftar berikutnya Guru biasa
+    // dan bisa diangkat menjadi Admin lewat Menu Kontrol > Akun Guru Terdaftar.
+    const acc = { name, email, salt, passwordHash, photo: null, role: isFirstAccount ? "admin" : "guru", createdAt: new Date().toISOString(), status: isFirstAccount ? "approved" : "pending" };
     await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), acc);
     await window.fb.set(window.fb.ref(window.fb.db, "teacherEmailIndexV2/" + emailKey), slug);
     if(isFirstAccount){
@@ -8195,6 +8359,7 @@ async function teacherLogout(){
   localStorage.removeItem("teacherSessionSlug");
   teacherName = "";
   teacherSlug = "";
+  teacherRole = "guru";
   goRole("role");
 }
 
@@ -8490,6 +8655,688 @@ async function saveTeacherProfile(){
   }
 }
 
+/* =========================================================
+   TAMBAHAN 1 — PERAN (ADMIN / GURU)
+   Semua akun guru sekarang punya field `role`:
+     - "admin" : boleh membuka menu Kontrol, Uang Keluar, Riwayat
+                 Aktivitas, dan boleh menghapus data.
+     - "guru"  : pemakaian harian (input pembayaran, pelanggaran,
+                 hafalan, izin, dll) tanpa hak hapus/kelola akun.
+   Data lama yang belum punya `role` otomatis dimigrasikan:
+   akun terlama dijadikan Admin (lihat ensureAdminExists).
+   ========================================================= */
+let teacherRole = "guru";
+
+function isAdmin(){ return teacherRole === "admin"; }
+function roleLabel(r){ return r === "admin" ? "Admin" : "Guru"; }
+
+/* Halaman yang hanya boleh dibuka Admin. */
+const ADMIN_ONLY_PAGES = ["control", "activity", "expenses"];
+
+/* Dipakai sebagai penjaga di awal fungsi-fungsi yang merusak data. */
+function requireAdmin(aksi){
+  if(isAdmin()) return true;
+  toast(`Hanya Admin yang boleh ${aksi || "melakukan tindakan ini"}.`, "error");
+  return false;
+}
+
+function adminOnlyNotice(){
+  return `
+    <div class="bg-surface-container-lowest rounded-xl p-8 border border-outline-variant text-center max-w-md mx-auto">
+      <span class="material-symbols-outlined text-[40px] text-on-surface-variant">lock</span>
+      <h4 class="font-display font-bold text-lg mt-2">Khusus Admin</h4>
+      <p class="text-sm text-on-surface-variant mt-1">Halaman ini hanya bisa dibuka oleh akun dengan peran <b>Admin</b>. Hubungi admin sekolah kalau Anda perlu akses.</p>
+    </div>`;
+}
+
+function visibleTeacherNavItems(){
+  return TEACHER_NAV_ITEMS.filter(it => !ADMIN_ONLY_PAGES.includes(it.id) || isAdmin());
+}
+
+function updateRoleBadge(){
+  const el = document.getElementById("teacher-role-badge");
+  if(!el) return;
+  el.textContent = roleLabel(teacherRole);
+  el.className = "ml-1 align-middle text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " +
+    (isAdmin() ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant");
+}
+
+/* Ambil ulang peran akun yang sedang login dari server, lalu perbarui menu. */
+async function refreshTeacherRole(){
+  if(!teacherSlug) return;
+  try{
+    const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2/" + teacherSlug));
+    if(snap.exists()) teacherRole = snap.val().role === "admin" ? "admin" : "guru";
+  }catch(e){ console.error(e); }
+  updateRoleBadge();
+  try{ renderTeacherNav(); setActiveNav(currentTeacherPage); }catch(e){}
+  if(ADMIN_ONLY_PAGES.includes(currentTeacherPage) && !isAdmin()) teacherGo("dashboard");
+}
+
+/* Pastikan selalu ada minimal satu Admin. Untuk data lama yang belum punya
+   field `role`, akun yang paling dulu dibuat otomatis dijadikan Admin —
+   kalau tidak, tidak ada seorang pun yang bisa mengelola peran. */
+async function ensureAdminExists(){
+  try{
+    const snap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2"));
+    if(!snap.exists()) return;
+    const entries = Object.entries(snap.val() || {}).filter(([,a]) => a && a.status !== "pending");
+    if(entries.length === 0) return;
+    if(entries.some(([,a]) => a.role === "admin")) return;
+    entries.sort((a,b)=> String(a[1].createdAt||"").localeCompare(String(b[1].createdAt||"")));
+    const [slug, acc] = entries[0];
+    await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), { ...acc, role: "admin" });
+  }catch(e){ console.error(e); }
+}
+
+/* Ubah peran seorang guru (hanya Admin). Admin terakhir tidak boleh diturunkan
+   supaya sistem tidak pernah kehilangan pengelola. */
+async function setTeacherAccountRole(slug, role){
+  if(!requireAdmin("mengubah peran akun")) return;
+  try{
+    const allSnap = await window.fb.get(window.fb.ref(window.fb.db, "teacherAccountsV2"));
+    const all = allSnap.exists() ? (allSnap.val()||{}) : {};
+    const acc = all[slug];
+    if(!acc){ toast("Akun tidak ditemukan.", "error"); return; }
+    if(role !== "admin"){
+      const adminCount = Object.values(all).filter(a => a && a.role === "admin" && a.status !== "pending").length;
+      if(adminCount <= 1 && acc.role === "admin"){
+        toast("Tidak bisa menurunkan Admin terakhir. Angkat admin lain dulu.", "error");
+        return;
+      }
+    }
+    const konfirmasi = role === "admin"
+      ? `Jadikan "${acc.name}" sebagai Admin? Admin bisa menghapus data, mengelola akun, dan melihat Riwayat Aktivitas.`
+      : `Turunkan "${acc.name}" menjadi Guru biasa? Akses Kontrol, Uang Keluar, dan hak hapus akan dicabut.`;
+    if(!confirm(konfirmasi)) return;
+    await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), { ...acc, role });
+    await logManualActivity(role === "admin" ? "angkat-admin" : "turunkan-admin", "Akun Guru", acc.name || slug, `peran menjadi ${roleLabel(role)}`);
+    toast(`Peran ${acc.name} sekarang ${roleLabel(role)}.`);
+    if(slug === teacherSlug){ teacherRole = role; updateRoleBadge(); renderTeacherNav(); setActiveNav(currentTeacherPage); }
+    renderTeacherAccountsTable();
+  }catch(e){
+    console.error(e);
+    toast("Gagal mengubah peran akun.", "error");
+  }
+}
+
+/* =========================================================
+   TAMBAHAN 2 — RIWAYAT AKTIVITAS (AUDIT LOG)
+   Catatan: seluruh data sekolah disimpan sebagai satu dokumen
+   JSON di `edusyncData`. Daripada menempelkan pencatatan di
+   puluhan tombol satu per satu (mudah terlewat), pencatatan
+   dilakukan di satu tempat: setiap kali data akan disimpan,
+   isi DB dibandingkan dengan salinan terakhir yang diketahui,
+   lalu perbedaannya dicatat beserta nama pelaku dan waktunya.
+   Dengan begitu SEMUA perubahan ikut tercatat, termasuk lewat
+   jalur yang belum ada saat kode ini ditulis.
+   ========================================================= */
+const AUDIT_LOG_MAX = 600;
+
+function auditStudentName(id){
+  const s = (DB && DB.students || []).find(x=>x.id===id);
+  return s ? s.name : "(santri dihapus)";
+}
+
+const AUDIT_COLLECTIONS = [
+  { key:"students",         label:"Data Santri",         title:o=>o.name || "(tanpa nama)" },
+  { key:"payments",         label:"Pembayaran Bulanan",  title:o=>`${auditStudentName(o.studentId)} — ${o.month||"-"}` },
+  { key:"expenses",         label:"Uang Keluar",         title:o=>o.name || o.item || o.title || o.desc || "(item)" },
+  { key:"infaq",            label:"Infaq",               title:o=>o.name || auditStudentName(o.studentId) },
+  { key:"violationTypes",   label:"Jenis Pelanggaran",   title:o=>o.name || "(tanpa nama)" },
+  { key:"violationRecords", label:"Catatan Pelanggaran", title:o=>auditStudentName(o.studentId) },
+  { key:"violationReports", label:"Laporan Pelanggaran", title:o=>o.targetName || o.studentName || auditStudentName(o.studentId) },
+  { key:"hafalanReports",   label:"Laporan Hafalan",     title:o=>o.studentName || o.name || auditStudentName(o.studentId) },
+  { key:"izinRequests",     label:"Perizinan Santri",    title:o=>auditStudentName(o.studentId) },
+  { key:"visits",           label:"Jadwal Kunjungan",    title:o=>auditStudentName(o.studentId) },
+  { key:"classList",        label:"Daftar Kelas",        plain:true },
+];
+
+const AUDIT_FIELD_LABEL = {
+  name:"nama", nickname:"panggilan", kelas:"kelas", nik:"NIK", code:"kode",
+  monthlyFee:"bayaran/bln", status:"status", amountPaid:"nominal dibayar",
+  points:"poin", desc:"keterangan", note:"catatan", date:"tanggal", time:"jam",
+  amount:"nominal", email:"email", parentEmail:"email orang tua",
+  parentPhone:"No. WA orang tua", phone:"No. HP", photo:"foto", month:"bulan",
+  keperluan:"keperluan", startDate:"tgl mulai", endDate:"tgl selesai",
+  kwitansiNo:"no. kwitansi", teacher:"pencatat",
+};
+
+function auditShortValue(v){
+  if(v === undefined || v === null || v === "") return "-";
+  if(typeof v === "string") return v.length > 50 ? "(data panjang)" : v;
+  if(typeof v === "object") return "(data)";
+  return String(v);
+}
+
+function auditFieldDiff(a, b){
+  const keys = new Set([...Object.keys(a||{}), ...Object.keys(b||{})]);
+  const parts = [];
+  keys.forEach(k=>{
+    if(k === "id") return;
+    const av = a ? a[k] : undefined;
+    const bv = b ? b[k] : undefined;
+    if(JSON.stringify(av) === JSON.stringify(bv)) return;
+    parts.push(`${AUDIT_FIELD_LABEL[k] || k}: ${auditShortValue(av)} → ${auditShortValue(bv)}`);
+  });
+  return parts.slice(0, 6).join("; ");
+}
+
+function auditTitle(col, obj){
+  try{ return String(col.title ? col.title(obj) : "-"); }catch(e){ return "-"; }
+}
+
+function auditTakeSnapshot(db){
+  const snap = {};
+  if(!db) return snap;
+  AUDIT_COLLECTIONS.forEach(c=>{
+    if(c.plain){ snap[c.key] = { __plain: JSON.stringify(db[c.key] || []) }; return; }
+    const m = {};
+    (db[c.key] || []).forEach((o, i)=>{ m[(o && o.id) ? o.id : "#" + i] = JSON.stringify(o); });
+    snap[c.key] = m;
+  });
+  snap.__settings = JSON.stringify(db.settings || {});
+  return snap;
+}
+
+function auditDiff(before, after){
+  const out = [];
+  if(!before) return out;
+  AUDIT_COLLECTIONS.forEach(c=>{
+    const b = before[c.key] || {};
+    const a = after[c.key] || {};
+    if(c.plain){
+      if(b.__plain !== a.__plain) out.push({ action:"ubah", entity:c.label, target:"daftar kelas", detail:"" });
+      return;
+    }
+    Object.keys(a).forEach(id=>{
+      if(!(id in b)){
+        out.push({ action:"tambah", entity:c.label, target: auditTitle(c, JSON.parse(a[id])), detail:"" });
+      } else if(b[id] !== a[id]){
+        out.push({ action:"ubah", entity:c.label, target: auditTitle(c, JSON.parse(a[id])), detail: auditFieldDiff(JSON.parse(b[id]), JSON.parse(a[id])) });
+      }
+    });
+    Object.keys(b).forEach(id=>{
+      if(!(id in a)) out.push({ action:"hapus", entity:c.label, target: auditTitle(c, JSON.parse(b[id])), detail:"" });
+    });
+  });
+  if(before.__settings !== after.__settings){
+    out.push({ action:"ubah", entity:"Pengaturan Sekolah", target:"Pengaturan", detail:"" });
+  }
+  return out;
+}
+
+/* Salinan data terakhir yang diketahui, dipakai sebagai pembanding. */
+let auditSnapshot = null;
+function auditResetSnapshot(db){ auditSnapshot = auditTakeSnapshot(db || DB); }
+
+function auditActor(){
+  if(teacherSlug) return { by: teacherName || "Guru", bySlug: teacherSlug, role: roleLabel(teacherRole) };
+  if(typeof currentStudent !== "undefined" && currentStudent){
+    return { by: (currentStudent.name || "Santri"), bySlug: "", role: "Portal" };
+  }
+  return { by: "Tidak dikenal", bySlug: "", role: "-" };
+}
+
+function auditPush(entry){
+  if(!Array.isArray(DB.activityLog)) DB.activityLog = [];
+  const who = auditActor();
+  DB.activityLog.push({
+    id: uid("log"),
+    at: new Date().toISOString(),
+    by: who.by, bySlug: who.bySlug, role: who.role,
+    ...entry,
+  });
+  if(DB.activityLog.length > AUDIT_LOG_MAX) DB.activityLog = DB.activityLog.slice(-AUDIT_LOG_MAX);
+}
+
+/* Dipanggil otomatis oleh saveDB() tepat sebelum data dikirim ke server. */
+function auditRecordChanges(){
+  if(!DB) return;
+  const after = auditTakeSnapshot(DB);
+  const changes = auditDiff(auditSnapshot, after);
+  changes.slice(0, 40).forEach(ch => auditPush(ch));
+  auditSnapshot = after;
+}
+
+/* Untuk kejadian yang tidak terlihat sebagai perubahan data (mis. cetak
+   kwitansi, ubah peran akun). Menyimpan sendiri ke server. */
+async function logManualActivity(action, entity, target, detail){
+  try{
+    if(!DB) return;
+    auditPush({ action, entity, target: target || "-", detail: detail || "" });
+    await saveDB();
+  }catch(e){ console.error(e); }
+}
+
+const AUDIT_ACTION_STYLE = {
+  tambah:   { label:"Tambah",  cls:"bg-secondary-container text-on-secondary-container" },
+  ubah:     { label:"Ubah",    cls:"bg-tertiary-fixed text-on-tertiary-fixed" },
+  hapus:    { label:"Hapus",   cls:"bg-error-container text-on-error-container" },
+  cetak:    { label:"Cetak",   cls:"bg-primary-fixed text-primary" },
+  kirim:    { label:"Kirim",   cls:"bg-primary-fixed text-primary" },
+  "angkat-admin":   { label:"Peran", cls:"bg-primary-fixed text-primary" },
+  "turunkan-admin": { label:"Peran", cls:"bg-primary-fixed text-primary" },
+};
+
+let activityFilter = { q: "", action: "", days: "30" };
+
+function setActivityFilter(field, value){
+  activityFilter[field] = value;
+  renderTeacherActivity();
+}
+
+function activityLogFiltered(){
+  const logs = [...(DB.activityLog || [])].reverse();
+  const q = (activityFilter.q || "").trim().toLowerCase();
+  const days = parseInt(activityFilter.days, 10);
+  const since = isNaN(days) ? null : Date.now() - days * 86400000;
+  return logs.filter(l=>{
+    if(activityFilter.action && l.action !== activityFilter.action) return false;
+    if(since && new Date(l.at).getTime() < since) return false;
+    if(q){
+      const hay = `${l.by} ${l.entity} ${l.target} ${l.detail} ${l.role}`.toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function formatLogTime(iso){
+  try{
+    return new Date(iso).toLocaleString("id-ID", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  }catch(e){ return iso || "-"; }
+}
+
+function renderTeacherActivity(){
+  const el = document.getElementById("teacher-content");
+  if(!isAdmin()){ el.innerHTML = adminOnlyNotice(); return; }
+  const rows = activityLogFiltered();
+  const total = (DB.activityLog || []).length;
+  el.innerHTML = `
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant">
+      <div class="p-5 border-b border-outline-variant">
+        <h4 class="font-display font-bold">Riwayat Aktivitas</h4>
+        <p class="text-xs text-on-surface-variant mt-0.5">Catatan siapa mengubah apa dan kapan. Tersimpan otomatis setiap kali ada perubahan data, dari perangkat mana pun. Menyimpan ${AUDIT_LOG_MAX} kejadian terakhir (saat ini ${total}).</p>
+      </div>
+      <div class="p-5 flex flex-col sm:flex-row gap-3 sm:items-end border-b border-outline-variant">
+        <div class="flex-1">
+          <label class="text-xs font-semibold text-on-surface-variant">Cari</label>
+          <input type="text" value="${escapeHtml(activityFilter.q)}" oninput="setActivityFilter('q', this.value)" placeholder="Nama pelaku, data, atau keterangan..."
+            class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-on-surface-variant">Jenis</label>
+          <select onchange="setActivityFilter('action', this.value)" class="w-full sm:w-40 mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest outline-none">
+            <option value="" ${activityFilter.action===""?"selected":""}>Semua</option>
+            <option value="tambah" ${activityFilter.action==="tambah"?"selected":""}>Tambah</option>
+            <option value="ubah" ${activityFilter.action==="ubah"?"selected":""}>Ubah</option>
+            <option value="hapus" ${activityFilter.action==="hapus"?"selected":""}>Hapus</option>
+            <option value="cetak" ${activityFilter.action==="cetak"?"selected":""}>Cetak/Kirim</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-semibold text-on-surface-variant">Periode</label>
+          <select onchange="setActivityFilter('days', this.value)" class="w-full sm:w-36 mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm bg-surface-container-lowest outline-none">
+            <option value="1" ${activityFilter.days==="1"?"selected":""}>24 jam</option>
+            <option value="7" ${activityFilter.days==="7"?"selected":""}>7 hari</option>
+            <option value="30" ${activityFilter.days==="30"?"selected":""}>30 hari</option>
+            <option value="" ${activityFilter.days===""?"selected":""}>Semua</option>
+          </select>
+        </div>
+        <button onclick="clearActivityLog()" class="bg-surface-container text-error border border-outline-variant rounded-lg text-sm font-semibold px-4 py-2 hover:shadow transition-all whitespace-nowrap">Bersihkan</button>
+      </div>
+      <div class="overflow-x-auto custom-scrollbar max-h-[60vh]">
+        <table class="w-full text-left text-sm min-w-[720px]">
+          <thead>
+            <tr class="bg-surface text-on-surface-variant text-xs uppercase">
+              <th class="p-3 sticky top-0 bg-surface">Waktu</th>
+              <th class="p-3 sticky top-0 bg-surface">Pelaku</th>
+              <th class="p-3 sticky top-0 bg-surface">Tindakan</th>
+              <th class="p-3 sticky top-0 bg-surface">Data</th>
+              <th class="p-3 sticky top-0 bg-surface">Keterangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0 ? `<tr><td colspan="5" class="p-6 text-center text-on-surface-variant">Belum ada aktivitas yang cocok dengan filter.</td></tr>` : rows.map(l=>{
+              const st = AUDIT_ACTION_STYLE[l.action] || { label: l.action, cls:"bg-surface-container text-on-surface-variant" };
+              return `<tr class="border-t border-outline-variant align-top">
+                <td class="p-3 whitespace-nowrap text-on-surface-variant">${formatLogTime(l.at)}</td>
+                <td class="p-3 whitespace-nowrap">
+                  <span class="font-medium">${escapeHtml(l.by || "-")}</span>
+                  <span class="block text-[10px] uppercase tracking-wide text-on-surface-variant">${escapeHtml(l.role || "-")}</span>
+                </td>
+                <td class="p-3"><span class="text-[11px] font-semibold px-2 py-0.5 rounded-full ${st.cls}">${st.label}</span></td>
+                <td class="p-3"><span class="font-medium">${escapeHtml(l.entity || "-")}</span><span class="block text-xs text-on-surface-variant">${escapeHtml(l.target || "")}</span></td>
+                <td class="p-3 text-xs text-on-surface-variant">${escapeHtml(l.detail || "")}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function clearActivityLog(){
+  if(!requireAdmin("membersihkan riwayat aktivitas")) return;
+  if(!confirm("Kosongkan seluruh Riwayat Aktivitas? Catatan lama tidak bisa dikembalikan.")) return;
+  DB.activityLog = [];
+  auditResetSnapshot(DB);
+  await saveDB();
+  auditResetSnapshot(DB);
+  renderTeacherActivity();
+  toast("Riwayat aktivitas dikosongkan.");
+}
+
+/* =========================================================
+   TAMBAHAN 3 — KWITANSI PEMBAYARAN (CETAK / PDF / KIRIM)
+   ========================================================= */
+const TERBILANG_ANGKA = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+
+function terbilang(n){
+  n = Math.floor(Math.abs(Number(n) || 0));
+  if(n < 12) return TERBILANG_ANGKA[n] || "nol";
+  if(n < 20) return terbilang(n - 10) + " belas";
+  if(n < 100) return terbilang(Math.floor(n / 10)) + " puluh" + (n % 10 ? " " + terbilang(n % 10) : "");
+  if(n < 200) return "seratus" + (n % 100 ? " " + terbilang(n % 100) : "");
+  if(n < 1000) return terbilang(Math.floor(n / 100)) + " ratus" + (n % 100 ? " " + terbilang(n % 100) : "");
+  if(n < 2000) return "seribu" + (n % 1000 ? " " + terbilang(n % 1000) : "");
+  if(n < 1000000) return terbilang(Math.floor(n / 1000)) + " ribu" + (n % 1000 ? " " + terbilang(n % 1000) : "");
+  if(n < 1000000000) return terbilang(Math.floor(n / 1000000)) + " juta" + (n % 1000000 ? " " + terbilang(n % 1000000) : "");
+  return terbilang(Math.floor(n / 1000000000)) + " miliar" + (n % 1000000000 ? " " + terbilang(n % 1000000000) : "");
+}
+
+function terbilangRupiah(nRibuan){
+  const rupiah = (Number(nRibuan) || 0) * 1000;
+  const kata = terbilang(rupiah).trim();
+  return (kata ? kata.charAt(0).toUpperCase() + kata.slice(1) : "Nol") + " rupiah";
+}
+
+function paymentRecord(studentId, mKey){
+  return (DB.payments || []).find(p => p.studentId === studentId && p.month === mKey);
+}
+
+/* Nomor kwitansi ditetapkan sekali lalu disimpan pada data pembayaran,
+   sehingga cetak ulang tetap memakai nomor yang sama. */
+async function getOrAssignKwitansiNo(studentId, mKey){
+  let p = paymentRecord(studentId, mKey);
+  if(!p){
+    p = { id: uid("pay"), studentId, month: mKey, status: "paid", amountPaid: studentMonthlyFee(studentId) };
+    DB.payments.push(p);
+  }
+  if(p.kwitansiNo) return p;
+  DB.kwitansiCounter = (DB.kwitansiCounter || 0) + 1;
+  p.kwitansiNo = DB.kwitansiCounter;
+  p.kwitansiAt = new Date().toISOString();
+  p.kwitansiBy = teacherName || "Guru";
+  await saveDB();
+  return p;
+}
+
+const KWITANSI_CSS = `
+  .kwitansi-sheet{ font-family: 'Times New Roman', Times, serif; color:#111; background:#fff; padding: 26px 34px; font-size: 13px; line-height: 1.5; box-sizing:border-box; }
+  .kwitansi-sheet .kop{ display:flex; align-items:center; justify-content:center; gap:14px; border-bottom: 3px solid #111; padding-bottom: 8px; }
+  .kwitansi-sheet .kop img{ width:auto; height: 66px; object-fit: contain; flex-shrink:0; }
+  .kwitansi-sheet .kop .sekolah-nama-1{ font-size: 13px; font-weight: bold; margin:0; text-align:center; }
+  .kwitansi-sheet .kop .sekolah-nama-2{ font-size: 15px; font-weight: bold; margin:1px 0 0; text-align:center; color:#0f4d2c; }
+  .kwitansi-sheet .kop .sekolah-alamat{ font-size: 10px; margin:2px 0 0; text-align:center; }
+  .kwitansi-sheet .kop-garis-bawah{ border-bottom:1px solid #111; margin-bottom: 14px; }
+  .kwitansi-sheet h1.judul{ text-align:center; font-size:15px; font-weight:bold; text-decoration:underline; letter-spacing:1px; margin: 4px 0 2px; }
+  .kwitansi-sheet .nomor{ text-align:center; font-size:12px; margin:0 0 14px; }
+  .kwitansi-sheet table.isi{ width:100%; border-collapse:collapse; }
+  .kwitansi-sheet table.isi td{ padding: 4px 4px; font-size:13px; vertical-align:top; }
+  .kwitansi-sheet table.isi td.label{ width: 168px; }
+  .kwitansi-sheet table.isi td.colon{ width: 12px; }
+  .kwitansi-sheet .terbilang{ font-style:italic; border:1px solid #111; padding:5px 8px; display:inline-block; min-width:60%; margin-top:2px; }
+  .kwitansi-sheet .kotak-nominal{ border:2px solid #111; padding:8px 16px; font-size:17px; font-weight:bold; display:inline-block; margin-top:6px; }
+  .kwitansi-sheet .lunas{ color:#0f4d2c; border:2px solid #0f4d2c; padding:2px 10px; font-weight:bold; letter-spacing:1px; font-size:12px; border-radius:3px; }
+  .kwitansi-sheet .kurang{ color:#8c1c13; border:2px solid #8c1c13; padding:2px 10px; font-weight:bold; letter-spacing:1px; font-size:12px; border-radius:3px; }
+  .kwitansi-sheet .bawah{ display:flex; justify-content:space-between; align-items:flex-end; margin-top: 18px; gap:16px; }
+  .kwitansi-sheet .ttd{ text-align:center; font-size:12px; min-width: 200px; }
+  .kwitansi-sheet .garis-ttd{ margin-top: 50px; border-bottom:1px solid #111; }
+  .kwitansi-sheet .catatan{ font-size:10.5px; font-style:italic; margin-top:12px; }
+`;
+
+function buildKwitansiSheetHtml(d){
+  return `
+    <div class="kwitansi-sheet">
+      <div class="kop">
+        <img src="${SCHOOL_LOGO_MARITIM_B64}" alt="Logo SMK Maritim"/>
+        <div>
+          <p class="sekolah-nama-1">SEKOLAH MENENGAH KEJURUAN</p>
+          <p class="sekolah-nama-2">MARITIM MUHAMMADIYAH KENDARI</p>
+          <p class="sekolah-alamat">Alamat : Jl. Imam Bonjol No. 30 D Kel. Wawombalata Kec. Mandonga Kota Kendari</p>
+          <p class="sekolah-alamat">Mobile : 085198978873 &nbsp; email : alghiamir@gmail.com</p>
+        </div>
+        <img class="logo-muhammadiyah" src="${SCHOOL_LOGO_BASE64}" alt="Logo Muhammadiyah"/>
+      </div>
+      <div class="kop-garis-bawah"></div>
+
+      <h1 class="judul">KWITANSI PEMBAYARAN</h1>
+      <p class="nomor">Nomor : ${escapeHtml(d.nomor)}</p>
+
+      <table class="isi">
+        <tr><td class="label">Telah diterima dari</td><td class="colon">:</td><td><b>${escapeHtml(d.dariNama)}</b></td></tr>
+        <tr><td class="label">Nama Santri / Kelas</td><td class="colon">:</td><td>${escapeHtml(d.namaSantri)} / ${escapeHtml(d.kelasSantri)}</td></tr>
+        <tr><td class="label">Untuk pembayaran</td><td class="colon">:</td><td>Iuran bulanan santri bulan <b>${escapeHtml(d.bulanLabel)}</b></td></tr>
+        <tr><td class="label">Terbilang</td><td class="colon">:</td><td><span class="terbilang">${escapeHtml(d.terbilang)}</span></td></tr>
+        <tr><td class="label">Status bulan ini</td><td class="colon">:</td><td>
+          ${d.kurang > 0
+            ? `<span class="kurang">KURANG ${escapeHtml(formatRupiah(d.kurang))}</span> &nbsp; <span style="font-size:11.5px">(tagihan ${escapeHtml(formatRupiah(d.tagihan))})</span>`
+            : `<span class="lunas">LUNAS</span> &nbsp; <span style="font-size:11.5px">(tagihan ${escapeHtml(formatRupiah(d.tagihan))})</span>`}
+        </td></tr>
+      </table>
+
+      <div class="bawah">
+        <div>
+          <div class="kotak-nominal">${escapeHtml(formatRupiah(d.jumlah))}</div>
+        </div>
+        <div class="ttd">
+          Kendari, ${escapeHtml(d.tanggal)}<br/>Penerima,
+          <div class="garis-ttd"></div>
+          <div style="margin-top:4px">${escapeHtml(d.penerima)}</div>
+        </div>
+      </div>
+
+      <p class="catatan">Catatan: Kwitansi ini sah sebagai bukti pembayaran. Simpan baik-baik dan tunjukkan bila diperlukan. Dicetak dari sistem pada ${escapeHtml(d.dicetak)}.</p>
+    </div>`;
+}
+
+let kwitansiCurrent = null;
+
+async function openKwitansiModal(studentId, mKey){
+  const s = studentById(studentId);
+  if(!s){ toast("Data santri tidak ditemukan.", "error"); return; }
+  const p = await getOrAssignKwitansiNo(studentId, mKey);
+  const bulanIdx = parseInt(mKey.split("-")[1], 10) - 1;
+  const bulanLabel = `${MONTHS_ID[bulanIdx]} ${mKey.split("-")[0]}`;
+  const tagihan = studentMonthlyFee(studentId);
+  const jumlah = paymentAmountPaid(studentId, mKey);
+  const now = new Date();
+
+  kwitansiCurrent = {
+    studentId, mKey,
+    nomor: `${String(p.kwitansiNo).padStart(4, "0")}/KW/SMK-MK/${bulanRomawi(now.getMonth() + 1)}/${now.getFullYear()}`,
+    dariNama: `Orang tua/wali dari ${s.name}`,
+    namaSantri: s.name,
+    kelasSantri: s.kelas || "-",
+    bulanLabel,
+    jumlah,
+    tagihan,
+    kurang: Math.max(0, tagihan - jumlah),
+    terbilang: terbilangRupiah(jumlah),
+    tanggal: formatDate(todayISO()),
+    penerima: (p.kwitansiBy || teacherName || "Guru"),
+    dicetak: formatLogTime(new Date().toISOString()),
+  };
+
+  document.getElementById("kwitansi-preview").innerHTML = `<style>${KWITANSI_CSS}</style>${buildKwitansiSheetHtml(kwitansiCurrent)}`;
+  const modal = document.getElementById("kwitansi-modal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+  fitKwitansiPreview();
+}
+
+/* Lembar kwitansi digambar pada lebar asli A4 (794px) lalu diperkecil
+   proporsional agar muat di layar HP maupun laptop. */
+function fitKwitansiPreview(){
+  const box = document.getElementById("kwitansi-preview");
+  const wrap = document.getElementById("kwitansi-preview-wrap");
+  if(!box || !wrap) return;
+  requestAnimationFrame(()=>{
+    const scale = Math.min(1, wrap.clientWidth / 794);
+    box.style.transform = `scale(${scale})`;
+    wrap.style.height = Math.ceil(box.scrollHeight * scale) + "px";
+  });
+}
+window.addEventListener("resize", ()=>{
+  const modal = document.getElementById("kwitansi-modal");
+  if(modal && !modal.classList.contains("hidden")) fitKwitansiPreview();
+});
+
+function closeKwitansiModal(){
+  const modal = document.getElementById("kwitansi-modal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function printKwitansi(){
+  if(!kwitansiCurrent) return;
+  const win = window.open("", "_blank");
+  if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
+  win.document.write(`<html><head><title>Kwitansi ${escapeHtml(kwitansiCurrent.namaSantri)} - ${escapeHtml(kwitansiCurrent.bulanLabel)}</title>
+    <style>body{margin:0}@page{size:A5 landscape;margin:0}${KWITANSI_CSS}</style></head>
+    <body>${buildKwitansiSheetHtml(kwitansiCurrent)}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>{ win.print(); }, 350);
+  logManualActivity("cetak", "Kwitansi Pembayaran", `${kwitansiCurrent.namaSantri} — ${kwitansiCurrent.bulanLabel}`, `No. ${kwitansiCurrent.nomor}`);
+}
+
+/* Membuat file PDF kwitansi (A5 landscape) dan mengembalikannya sebagai Blob. */
+async function buildKwitansiPdfBlob(){
+  if(typeof html2canvas !== "function" || !window.jspdf) throw new Error("PDF belum siap");
+  const holder = document.createElement("div");
+  holder.style.position = "fixed";
+  holder.style.left = "-9999px";
+  holder.style.top = "0";
+  holder.style.width = "794px";
+  holder.style.background = "#fff";
+  holder.innerHTML = `<style>${KWITANSI_CSS}</style>${buildKwitansiSheetHtml(kwitansiCurrent)}`;
+  document.body.appendChild(holder);
+  try{
+    await new Promise(res => requestAnimationFrame(()=>requestAnimationFrame(res)));
+    const canvas = await html2canvas(holder, { scale: 2, backgroundColor: "#ffffff", useCORS: true });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a5" });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const imgW = pageWidth;
+    const imgH = (canvas.height * imgW) / canvas.width;
+    pdf.addImage(canvas.toDataURL("image/png"), "PNG", 0, 0, imgW, imgH);
+    return pdf.output("blob");
+  } finally {
+    holder.remove();
+  }
+}
+
+function kwitansiFileName(){
+  const nama = (kwitansiCurrent.namaSantri || "santri").replace(/[^a-z0-9]+/gi, "_");
+  const bulan = (kwitansiCurrent.bulanLabel || "").replace(/[^a-z0-9]+/gi, "_");
+  return `Kwitansi_${nama}_${bulan}.pdf`;
+}
+
+async function downloadKwitansiPdf(){
+  if(!kwitansiCurrent) return;
+  const btn = document.getElementById("kwitansi-download-btn");
+  const old = btn ? btn.innerHTML : "";
+  if(btn){ btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Menyiapkan...`; }
+  try{
+    const blob = await buildKwitansiPdfBlob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = kwitansiFileName();
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    toast("Kwitansi PDF berhasil diunduh.");
+    logManualActivity("cetak", "Kwitansi Pembayaran", `${kwitansiCurrent.namaSantri} — ${kwitansiCurrent.bulanLabel}`, `Unduh PDF No. ${kwitansiCurrent.nomor}`);
+  }catch(e){
+    console.error(e);
+    toast("Gagal membuat PDF kwitansi.", "error");
+  }finally{
+    if(btn){ btn.disabled = false; btn.innerHTML = old; }
+  }
+}
+
+function buildKwitansiWaMessage(d){
+  return [
+    `*Kwitansi Pembayaran Santri*`,
+    `Assalamu'alaikum, Bapak/Ibu Wali Santri.`,
+    ``,
+    `Pembayaran berikut sudah kami terima dan catat:`,
+    `No. Kwitansi: ${d.nomor}`,
+    `Nama Santri: ${d.namaSantri} (${d.kelasSantri})`,
+    `Bulan: ${d.bulanLabel}`,
+    `Jumlah diterima: ${formatRupiah(d.jumlah)}`,
+    d.kurang > 0 ? `Sisa kekurangan: ${formatRupiah(d.kurang)}` : `Status: LUNAS`,
+    ``,
+    `File kwitansi (PDF) kami lampirkan. Terima kasih.`,
+    `— SMK Maritim Muhammadiyah Kendari`,
+  ].join("\n");
+}
+
+/* Kirim ke orang tua. Di HP (Android/iOS) file PDF bisa langsung dibagikan ke
+   WhatsApp lewat menu berbagi bawaan. Di komputer, PDF diunduh lalu WhatsApp
+   Web dibuka dengan pesan siap kirim — tinggal lampirkan filenya. */
+async function sendKwitansiToParent(){
+  if(!kwitansiCurrent) return;
+  const s = studentById(kwitansiCurrent.studentId);
+  const btn = document.getElementById("kwitansi-send-btn");
+  const old = btn ? btn.innerHTML : "";
+  if(btn){ btn.disabled = true; btn.innerHTML = `<span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>Menyiapkan...`; }
+  try{
+    const blob = await buildKwitansiPdfBlob();
+    const file = new File([blob], kwitansiFileName(), { type: "application/pdf" });
+    const pesan = buildKwitansiWaMessage(kwitansiCurrent);
+
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      await navigator.share({ files: [file], title: "Kwitansi Pembayaran", text: pesan });
+      toast("Kwitansi dibagikan.");
+    } else {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = kwitansiFileName();
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      const phone = s && s.parentPhone ? formatPhoneForWa(s.parentPhone) : "";
+      const waUrl = phone
+        ? `https://wa.me/${phone}?text=${encodeURIComponent(pesan)}`
+        : `https://wa.me/?text=${encodeURIComponent(pesan)}`;
+      window.open(waUrl, "_blank", "noopener");
+      toast("PDF diunduh & WhatsApp dibuka — tinggal lampirkan file kwitansinya.");
+    }
+    logManualActivity("kirim", "Kwitansi Pembayaran", `${kwitansiCurrent.namaSantri} — ${kwitansiCurrent.bulanLabel}`, `Dikirim ke orang tua, No. ${kwitansiCurrent.nomor}`);
+  }catch(e){
+    if(e && e.name === "AbortError") { /* pengguna batal berbagi */ }
+    else { console.error(e); toast("Gagal menyiapkan kwitansi untuk dikirim.", "error"); }
+  }finally{
+    if(btn){ btn.disabled = false; btn.innerHTML = old; }
+  }
+}
+
+
+/* Sembunyikan tombol aksi khusus Admin dari guru biasa, supaya tidak
+   membingungkan (penjaga requireAdmin di tiap fungsi tetap jadi lapis kedua). */
+const ADMIN_ONLY_ACTION_RE = /^\s*(deleteStudent|deleteExpense|deleteInfaq|deleteViolationType|deleteViolationRecord|deleteViolationReport|deleteHafalanReport|deleteVisit|deleteIzin|deleteClassOption|deleteTeacherAccount|approveTeacherAccount|resetTeacherAccountPassword|regenerateParentToken|regenerateReportToken|setTeacherAccountRole|clearActivityLog)\s*\(/;
+
+function applyRoleVisibility(){
+  if(isAdmin()) return;
+  const root = document.getElementById("screen-teacher");
+  if(!root) return;
+  root.querySelectorAll("button[onclick], a[onclick]").forEach(el=>{
+    if(ADMIN_ONLY_ACTION_RE.test(el.getAttribute("onclick") || "")) el.style.display = "none";
+  });
+}
+
 const TEACHER_NAV_ITEMS = [
   { id: "dashboard", icon: "dashboard", label: "Dashboard" },
   { id: "students", icon: "group", label: "Data Siswa" },
@@ -8502,6 +9349,7 @@ const TEACHER_NAV_ITEMS = [
   { id: "izin", icon: "assignment_turned_in", label: "Perizinan Santri" },
   { id: "laporan", icon: "summarize", label: "Laporan" },
   { id: "control", icon: "qr_code_2", label: "Kontrol" },
+  { id: "activity", icon: "history", label: "Riwayat Aktivitas" },
   { id: "ai-agency", icon: "smart_toy", label: "AI Agency" },
 ];
 
@@ -8519,6 +9367,7 @@ const TEACHER_RENDERERS = {
   izin: () => renderTeacherIzin(),
   laporan: () => renderTeacherLaporan(),
   control: () => renderTeacherControl(),
+  activity: () => renderTeacherActivity(),
   "ai-agency": () => renderTeacherAIAgency(),
 };
 
@@ -9027,14 +9876,14 @@ function renderTeacherNav(){
   const linkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-outline hover:text-white hover:bg-white/10 transition-colors";
   const mobileLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors";
   const nav = document.getElementById("teacher-nav");
-  nav.innerHTML = TEACHER_NAV_ITEMS.map(it => `
+  nav.innerHTML = visibleTeacherNavItems().map(it => `
     <li>
       <a href="javascript:void(0)" onclick="teacherGo('${it.id}')" data-nav="${it.id}" class="${linkClass}">
         <span class="material-symbols-outlined">${it.icon}</span><span>${it.label}</span>
       </a>
     </li>`).join("");
   const navMobile = document.getElementById("teacher-nav-mobile");
-  navMobile.innerHTML = TEACHER_NAV_ITEMS.map(it => `
+  navMobile.innerHTML = visibleTeacherNavItems().map(it => `
     <li>
       <a href="javascript:void(0)" onclick="teacherGo('${it.id}')" data-nav-mobile="${it.id}" class="${mobileLinkClass}">
         <span class="material-symbols-outlined">${it.icon}</span><span>${it.label}</span>
@@ -9071,14 +9920,20 @@ function setActiveNav(id){
 }
 
 function teacherGo(page){
+  // Penjaga peran: halaman tertentu hanya untuk Admin.
+  if(ADMIN_ONLY_PAGES.includes(page) && !isAdmin()){
+    toast("Halaman ini hanya untuk Admin.", "error");
+    page = "dashboard";
+  }
   currentTeacherPage = page;
   if(page !== "log-violation") pendingLogReportId = null;
   setActiveNav(page);
   closeTeacherMobileNav();
-  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Kontrol" };
+  const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Kontrol", activity:"Riwayat Aktivitas", "ai-agency":"AI Agency" };
   document.getElementById("teacher-page-title").textContent = titles[page] || page;
   if (TEACHER_RENDERERS[page]) TEACHER_RENDERERS[page]();
   else { document.getElementById("teacher-content").innerHTML = `<div class="bg-surface-container-lowest rounded-xl p-6 border border-outline-variant">Halaman belum tersedia.</div>`; }
+  setTimeout(applyRoleVisibility, 0);
 }
 
 /* =========================================================
@@ -9206,6 +10061,7 @@ function parentLogin(){
 
 const PARENT_NAV_ITEMS = [
   { id: "dashboard", icon: "space_dashboard", label: "Dashboard" },
+  { id: "hafalan", icon: "menu_book", label: "Hafalan" },
   { id: "kunjungan", icon: "calendar_month", label: "Jadwal Kunjungan" },
   { id: "izin", icon: "assignment_turned_in", label: "Ajukan Izin" },
 ];
@@ -9231,6 +10087,7 @@ function parentGo(page){
   currentParentPage = page;
   setParentActiveNav(page);
   if(page==="dashboard") renderParentDashboard();
+  else if(page==="hafalan") renderParentHafalan();
   else if(page==="kunjungan") renderParentVisits();
   else if(page==="izin") renderParentIzin();
 }
@@ -9345,6 +10202,107 @@ function renderParentViolationList(){
       <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
     </div>`;
   }).join("") : `<p class="p-6 text-center text-on-surface-variant text-sm">Tidak ada catatan untuk periode ini.</p>`;
+}
+
+/* =========================================================
+   PORTAL (Orang Tua & Santri): Perkembangan Hafalan
+   Dipakai bersama oleh renderParentHafalan() dan renderStudentHafalan().
+   Mengandalkan fungsi-fungsi hafalan yang sudah ada di halaman guru
+   (hafalanNameKey, hafalanReportNameKey, hafalanUniqueAyatTotal, dst).
+   ========================================================= */
+
+/* Target ayat setoran per bulan. Bisa diatur admin di Menu Kontrol;
+   kalau belum pernah diatur, default 100 ayat/bulan. */
+function hafalanMonthlyTarget(){
+  const t = DB.settings && Number(DB.settings.hafalanMonthlyTarget);
+  return (t && t > 0) ? t : 100;
+}
+
+/* Semua laporan hafalan milik satu santri (cocok lewat studentId, atau lewat
+   nama kalau laporan lama belum tertaut studentId). */
+function studentHafalanReports(s){
+  if(!s) return [];
+  const key = hafalanNameKey(s.name);
+  return (DB.hafalanReports || []).filter(r => r.studentId === s.id || hafalanReportNameKey(r) === key);
+}
+
+function hafalanPortalRowsHtml(list){
+  if(!list.length) return `<tr><td colspan="4" class="p-6 text-center text-on-surface-variant">Belum ada laporan hafalan.</td></tr>`;
+  return list.map(r=>`
+    <tr class="border-t border-outline-variant">
+      <td class="p-3 whitespace-nowrap">${formatDate(r.date)}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.fromSurah||"-")} ayat ${r.fromAyah||"-"}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.toSurah||"-")} ayat ${r.toAyah||"-"}</td>
+      <td class="p-3 whitespace-nowrap">${escapeHtml(r.time||"-")}</td>
+    </tr>`).join("");
+}
+
+/* Isi halaman Hafalan: total ayat, target bulan berjalan dengan bar kemajuan,
+   dan riwayat setoran. Sama untuk portal Orang Tua maupun portal Santri. */
+function hafalanPortalSectionHtml(s){
+  const allReports = studentHafalanReports(s)
+    .sort((a,b)=> new Date(`${b.date}T${b.time || "00:00"}`) - new Date(`${a.date}T${a.time || "00:00"}`));
+  const totalAyat = hafalanUniqueAyatTotal(allReports);
+  const now = new Date();
+  const mKey = monthKey(now.getFullYear(), now.getMonth());
+  const monthReports = allReports.filter(r => r.date && r.date.slice(0,7) === mKey);
+  const monthAyat = hafalanUniqueAyatTotal(monthReports);
+  const target = hafalanMonthlyTarget();
+  const pct = target > 0 ? Math.min(100, Math.round(monthAyat / target * 100)) : 0;
+  const tercapai = monthAyat >= target;
+
+  return `
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-6">
+      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-6 flex flex-col items-center justify-center text-center">
+        <span class="material-symbols-outlined text-primary text-3xl mb-1">menu_book</span>
+        <p class="font-display font-extrabold text-3xl">${totalAyat}</p>
+        <p class="text-xs text-on-surface-variant mt-1">Total Ayat Hafalan (unik, sepanjang waktu)</p>
+        <p class="text-[11px] text-on-surface-variant mt-1">${allReports.length} setoran tercatat</p>
+      </div>
+      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant p-6">
+        <p class="text-xs font-semibold text-on-surface-variant mb-1">Target Bulan Ini (${MONTHS_ID[now.getMonth()]} ${now.getFullYear()})</p>
+        <div class="flex items-end justify-between mb-2">
+          <p class="font-display font-bold text-2xl">${monthAyat}<span class="text-sm font-normal text-on-surface-variant"> / ${target} ayat</span></p>
+          <span class="text-xs font-semibold ${tercapai ? "text-secondary" : "text-primary"}">${pct}%</span>
+        </div>
+        <div class="w-full h-2.5 rounded-full bg-surface-container overflow-hidden">
+          <div class="h-full rounded-full ${tercapai ? "bg-secondary" : "bg-primary"} transition-all" style="width:${pct}%"></div>
+        </div>
+        ${tercapai
+          ? `<p class="text-[11px] text-secondary mt-2 font-semibold">Target bulan ini tercapai, Masya Allah! 🎉</p>`
+          : `<p class="text-[11px] text-on-surface-variant mt-2">Kurang ${target - monthAyat} ayat lagi menuju target bulan ini.</p>`}
+      </div>
+    </div>
+
+    <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant">
+      <div class="p-5 border-b border-outline-variant flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary">history_edu</span>
+        <h4 class="font-display font-bold">Riwayat Setoran Hafalan</h4>
+      </div>
+      <div class="overflow-x-auto custom-scrollbar max-h-[420px]">
+        <table class="w-full text-left text-sm min-w-[520px]">
+          <thead>
+            <tr class="bg-surface text-on-surface-variant text-xs uppercase sticky top-0">
+              <th class="p-3">Tanggal</th><th class="p-3">Dari</th><th class="p-3">Sampai</th><th class="p-3">Waktu</th>
+            </tr>
+          </thead>
+          <tbody>${hafalanPortalRowsHtml(allReports)}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderParentHafalan(){
+  const s = currentStudent;
+  const el = document.getElementById("parent-content");
+  el.innerHTML = `
+    <div class="mb-5">
+      <h2 class="font-display text-xl font-bold">Perkembangan Hafalan ${s.name.split(" ")[0]}</h2>
+      <p class="text-xs text-on-surface-variant mt-1">Pantau setoran hafalan Al-Qur'an ${s.name.split(" ")[0]} dari waktu ke waktu.</p>
+    </div>
+    ${hafalanPortalSectionHtml(s)}
+  `;
 }
 
 /* =========================================================
@@ -9465,6 +10423,7 @@ function studentLogin(){
 
 const STUDENT_NAV_ITEMS = [
   { id: "dashboard", icon: "space_dashboard", label: "Dashboard" },
+  { id: "hafalan", icon: "menu_book", label: "Hafalan" },
   { id: "izin", icon: "assignment_turned_in", label: "Ajukan Izin" },
 ];
 
@@ -9507,6 +10466,7 @@ function studentGo(page){
   currentStudentPage = page;
   setStudentActiveNav(page);
   if(page==="dashboard") renderStudentDashboard();
+  else if(page==="hafalan") renderStudentHafalan();
   else if(page==="izin") renderStudentIzin();
 }
 
@@ -9581,6 +10541,18 @@ function renderStudentViolationList(){
       <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
     </div>`;
   }).join("") : `<p class="p-6 text-center text-on-surface-variant text-sm">Belum ada pelanggaran untuk periode ini. Pertahankan!</p>`;
+}
+
+function renderStudentHafalan(){
+  const s = currentStudent;
+  const el = document.getElementById("student-content");
+  el.innerHTML = `
+    <div class="mb-5">
+      <h2 class="font-display text-xl font-bold">Hafalan Saya</h2>
+      <p class="text-xs text-on-surface-variant mt-1">Pantau perkembangan setoran hafalan Al-Qur'an kamu dari waktu ke waktu.</p>
+    </div>
+    ${hafalanPortalSectionHtml(s)}
+  `;
 }
 
 /* =========================================================
@@ -9756,6 +10728,7 @@ async function saveEditViolationReport(){
   }
 }
 async function deleteHafalanReport(id){
+  if(!requireAdmin("menghapus laporan hafalan")) return;
   if(!confirm('Hapus laporan hafalan ini secara permanen?')) return;
   await saveDBFresh(db=>{db.hafalanReports=deduplicateHafalanReports(db.hafalanReports||[]).filter(r=>r.id!==id);});
   toast('Laporan hafalan dihapus.'); renderTeacherReports();

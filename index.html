@@ -11488,6 +11488,71 @@ function buildAttendanceContext(question){
   const outF = window.teacherLogout;
   window.teacherLogout = function(){ teacherRole = null; updateRoleBadge(); return outF.apply(this, arguments); };
 
+  /* ---------- perbaikan: halaman tidak "lompat" setelah simpan/hapus ----------
+     1) Setiap perubahan data memicu gambar-ulang halaman aktif. Dulu ini mengembalikan
+        scroll ke atas dan menutup kartu (<details>) yang sedang dibuka. Sekarang posisi
+        scroll dan kartu yang terbuka dipertahankan.
+     2) Proses simpan yang selesai belakangan (setelah pengguna pindah menu) tidak lagi
+        menggambar ulang halaman lama dan "menarik" pengguna kembali ke sana. */
+  let __teacherNavigating = false;
+  let __lastUserInput = 0;
+  ["wheel","touchstart","mousedown","keydown"].forEach(ev=>window.addEventListener(ev, ()=>{ __lastUserInput = Date.now(); }, { passive:true, capture:true }));
+
+  const goF = window.teacherGo;
+  window.teacherGo = function(){
+    __teacherNavigating = true;
+    try{ return goF.apply(this, arguments); } finally { __teacherNavigating = false; }
+  };
+
+  const captureView = ()=>{
+    const host = document.getElementById("teacher-content");
+    const scrolls = [];
+    for(let el = host; el; el = el.parentElement){ if(el.scrollTop) scrolls.push([el, el.scrollTop]); }
+    const details = {};
+    if(host) host.querySelectorAll("details").forEach(d=>{
+      const sm = d.querySelector("summary");
+      if(sm) details[sm.textContent.trim()] = d.open;
+    });
+    return { scrolls, win:[window.scrollX, window.scrollY], details };
+  };
+  const restoreView = (st)=>{
+    const host = document.getElementById("teacher-content");
+    if(host) host.querySelectorAll("details").forEach(d=>{
+      const sm = d.querySelector("summary");
+      const k = sm && sm.textContent.trim();
+      if(k && Object.prototype.hasOwnProperty.call(st.details, k)) d.open = st.details[k];
+    });
+    const apply = ()=>{
+      st.scrolls.forEach(([el,v])=>{ if(el.isConnected) el.scrollTop = v; });
+      window.scrollTo(st.win[0], st.win[1]);
+    };
+    apply();
+    // isi halaman kadang selesai dimuat belakangan (mis. tabel akun) — pulihkan sekali lagi
+    // selama pengguna belum menggulir sendiri.
+    const t0 = Date.now();
+    setTimeout(()=>{ if(__lastUserInput < t0) apply(); }, 350);
+  };
+
+  const PAGE_RENDERERS = {
+    dashboard:"renderTeacherDashboard", students:"renderTeacherStudents", payments:"renderTeacherPayments",
+    expenses:"renderTeacherExpenses", "violation-types":"renderTeacherViolationTypes", "log-violation":"renderTeacherLogViolation",
+    reports:"renderTeacherReports", visits:"renderTeacherVisits", izin:"renderTeacherIzin", laporan:"renderTeacherLaporan",
+    control:"renderTeacherControl", "ai-agency":"renderTeacherAIAgency", attendance:"renderTeacherAttendance",
+    announcements:"renderTeacherAnnouncements"
+  };
+  Object.entries(PAGE_RENDERERS).forEach(([page, name])=>{
+    const f = window[name];
+    if(typeof f !== "function") return;
+    window[name] = function(){
+      if(currentTeacherPage !== page) return;              // render basi dari proses async: abaikan
+      if(__teacherNavigating) return f.apply(this, arguments); // pindah menu: mulai dari atas
+      const st = captureView();
+      const r = f.apply(this, arguments);
+      restoreView(st);
+      return r;
+    };
+  });
+
   // kabari orang tua setelah izin/kunjungan diputuskan
   const izinF = window.setIzinStatus;
   window.setIzinStatus = async function(id, status){

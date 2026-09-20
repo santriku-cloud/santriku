@@ -863,7 +863,10 @@ tailwind.config = {
         <div class="flex items-center gap-3">
           <button onclick="openTeacherProfileModal()" class="flex items-center gap-3 hover:opacity-80 transition-opacity" title="Edit profil saya">
             <span class="text-sm text-on-surface-variant hidden sm:block">Halo, <span id="teacher-name-display" class="font-semibold text-on-surface"></span></span>
-            <div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-semibold text-sm overflow-hidden" id="teacher-avatar"></div>
+            <div class="flex flex-col items-center gap-0.5">
+              <div class="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center font-semibold text-sm overflow-hidden" id="teacher-avatar"></div>
+              <span id="teacher-role-badge" class="hidden text-[9px] leading-none font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-surface-container text-on-surface-variant"></span>
+            </div>
           </button>
           <button onclick="teacherLogout()" class="md:hidden text-on-surface-variant"><span class="material-symbols-outlined">logout</span></button>
         </div>
@@ -5231,7 +5234,7 @@ async function renderTeacherAccountsTable(){
         <tr class="border-t border-outline-variant hover:bg-surface-container-low">
           <td class="p-3 font-medium">${escapeHtml(acc.name||"-")}</td>
           <td class="p-3 text-on-surface-variant">${escapeHtml(acc.email||"-")}</td>
-          <td class="p-3"><select onchange="setTeacherRole('${slug}', this.value)" class="px-2 py-1 rounded-md border border-outline-variant text-xs bg-white"><option value="guru" ${acc.role==="admin"?"":"selected"}>Guru</option><option value="admin" ${acc.role==="admin"?"selected":""}>Admin</option></select></td>
+          <td class="p-3"><select onchange="setTeacherRole('${slug}', this.value)" class="px-2.5 py-1 rounded-md border text-xs font-semibold cursor-pointer ${acc.role==="admin" ? "bg-primary text-on-primary border-primary" : "bg-secondary-container text-on-secondary-container border-secondary"}"><option value="guru" style="background:#fff;color:#151f17" ${acc.role==="admin"?"":"selected"}>Guru</option><option value="admin" style="background:#fff;color:#151f17" ${acc.role==="admin"?"selected":""}>Admin</option></select></td>
           <td class="p-3 text-on-surface-variant">${tgl}</td>
           <td class="p-3 text-right whitespace-nowrap">
             <button onclick="resetTeacherAccountPassword('${slug}')" class="text-primary hover:underline text-xs font-semibold mr-3">Reset Sandi</button>
@@ -6391,13 +6394,12 @@ function renderTeacherPayments(){
         </div>
       </div>
       <div id="payments-table-scroll" class="overflow-auto custom-scrollbar max-h-[70vh] border-t border-outline-variant">
-        <table class="w-full text-left text-sm min-w-[1150px]">
+        <table class="w-full text-left text-sm min-w-[1050px]">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
               <th class="p-3 sticky left-0 top-0 z-20 bg-surface [transform:translateZ(0)]">Siswa</th>
               <th class="p-3 text-center sticky top-0 z-10 bg-surface [transform:translateZ(0)]">Bayaran/Bln <span class="normal-case font-normal text-[10px] block">(ribuan, cth. 250 = Rp250.000)</span></th>
               ${months.map(m=>`<th class="p-3 text-center sticky top-0 z-10 bg-surface [transform:translateZ(0)]">${MONTHS_ID[parseInt(m.split("-")[1])-1]}</th>`).join("")}
-              <th class="p-3 text-center sticky top-0 z-10 bg-surface [transform:translateZ(0)]">Aksi</th>
             </tr>
           </thead>
           <tbody>
@@ -6415,6 +6417,7 @@ function renderTeacherPayments(){
                   const due = studentMonthlyFee(s.id);
                   const amountPaid = paymentAmountPaid(s.id, m);
                   const shortfall = paid ? Math.max(0, due - amountPaid) : 0;
+                  const owed = paid ? shortfall : due;
                   return `<td class="p-2 text-center align-top">
                     <div class="flex flex-col items-center gap-0.5">
                       <div class="relative">
@@ -6425,15 +6428,22 @@ function renderTeacherPayments(){
                         </button>
                         ${shortfall > 0 ? `<span class="absolute -bottom-1 -right-1.5 text-[9px] leading-none font-bold text-error bg-white border border-error rounded px-1 py-0.5 shadow-sm">-${(shortfall*1000).toLocaleString("id-ID")}</span>` : ""}
                       </div>
-                      <button onmousedown="event.preventDefault()" onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
-                        <span class="material-symbols-outlined text-[16px]">expand_more</span>
-                      </button>
+                      <div class="flex items-center gap-1">
+                        <button onmousedown="event.preventDefault()" onclick="openPaymentAmountModal('${s.id}','${m}')" class="text-on-surface-variant hover:text-primary transition-colors" title="Atur nominal dibayar bulan ini">
+                          <span class="material-symbols-outlined text-[16px]">expand_more</span>
+                        </button>
+                        ${owed > 0 ? `<button onmousedown="event.preventDefault()" onclick="sendPaymentReminder('${s.id}','${m}')" class="text-[#25D366] hover:opacity-70 transition-opacity" title="Kirim pengingat tunggakan via WhatsApp">
+                          <span class="material-symbols-outlined text-[16px]">chat</span>
+                        </button>` : ""}
+                        ${paid ? `<button onmousedown="event.preventDefault()" onclick="openReceiptModal('${s.id}','${m}')" class="text-primary hover:opacity-70 transition-opacity" title="Cetak / kirim kwitansi pembayaran">
+                          <span class="material-symbols-outlined text-[16px]">receipt_long</span>
+                        </button>` : ""}
+                      </div>
                     </div>
                   </td>`;
                 }).join("")}
-                ${paymentRowActionsHtml(s)}
               </tr>`).join("")}
-            ${DB.students.length===0?`<tr><td colspan="15" class="p-6 text-center text-on-surface-variant">Belum ada data siswa. Tambahkan di menu Data Siswa.</td></tr>`:""}
+            ${DB.students.length===0?`<tr><td colspan="14" class="p-6 text-center text-on-surface-variant">Belum ada data siswa. Tambahkan di menu Data Siswa.</td></tr>`:""}
           </tbody>
         </table>
       </div>
@@ -9952,6 +9962,14 @@ window.initApp = initApp;
 
 let teacherRole = null;   // "admin" | "guru"
 function isAdmin(){ return teacherRole === "admin"; }
+function updateRoleBadge(){
+  const el = document.getElementById("teacher-role-badge");
+  if(!el) return;
+  if(!teacherRole){ el.textContent = ""; el.className = "hidden"; return; }
+  el.textContent = isAdmin() ? "Admin" : "Guru";
+  el.className = "text-[9px] leading-none font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " +
+    (isAdmin() ? "bg-primary-fixed text-primary" : "bg-surface-container text-on-surface-variant");
+}
 function requireAdmin(){
   if(isAdmin()) return true;
   toast("Fitur ini hanya untuk Admin.", "error");
@@ -10128,6 +10146,7 @@ async function resolveTeacherRole(acc, slug){
       }
     }
     teacherRole = role;
+    updateRoleBadge();
     if(typeof renderTeacherNav === "function"){
       renderTeacherNav();
       setActiveNav(currentTeacherPage);
@@ -10153,7 +10172,7 @@ async function setTeacherRole(slug, role){
     await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/"+slug), { ...acc, role });
     toast(acc.name+" sekarang berperan sebagai "+(role==="admin"?"Admin":"Guru")+".");
     await logManual("ubah","akun","Peran "+acc.name+": "+(role==="admin"?"Admin":"Guru"));
-    if(slug === teacherSlug){ teacherRole = role; renderTeacherNav(); setActiveNav(currentTeacherPage); }
+    if(slug === teacherSlug){ teacherRole = role; updateRoleBadge(); renderTeacherNav(); setActiveNav(currentTeacherPage); }
     renderTeacherAccountsTable();
   }catch(e){ console.error(e); toast("Gagal mengubah peran.", "error"); }
 }
@@ -10292,13 +10311,30 @@ function resetWaTemplate(){
 }
 
 /* ---------- riwayat aktivitas ---------- */
-function activityRowsHtml(filter){
-  const q = String(filter||"").trim().toLowerCase();
-  const list = [...(DB.activityLog||[])].reverse().filter(e=>{
+let activityFilter = { q:"", from:"", to:"" };
+function activityLocalDate(ts){
+  const d = new Date(ts);
+  if(isNaN(d)) return "";
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+function activityFiltered(){
+  const q = String(activityFilter.q||"").trim().toLowerCase();
+  const from = activityFilter.from || "", to = activityFilter.to || "";
+  return [...(DB.activityLog||[])].reverse().filter(e=>{
+    if(from || to){
+      const day = activityLocalDate(e.ts);
+      if(!day) return false;
+      if(from && day < from) return false;
+      if(to && day > to) return false;
+    }
     if(!q) return true;
     return [e.who, e.action, AUDIT_LABELS[e.coll]||e.coll, e.label].join(" ").toLowerCase().includes(q);
-  }).slice(0,200);
-  if(!list.length) return `<tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Belum ada riwayat.</td></tr>`;
+  });
+}
+function activityRowsHtml(){
+  const all = activityFiltered();
+  const list = all.slice(0,200);
+  if(!list.length) return `<tr><td colspan="5" class="p-4 text-center text-on-surface-variant">${(DB.activityLog||[]).length ? "Tidak ada riwayat yang cocok dengan pencarian." : "Belum ada riwayat."}</td></tr>`;
   const badge = a => a==="tambah" ? "bg-secondary-container text-on-secondary-container" : a==="hapus" ? "bg-error-container text-on-error-container" : "bg-tertiary-fixed text-on-tertiary-fixed";
   return list.map(e=>`
     <tr class="border-t border-outline-variant">
@@ -10306,14 +10342,36 @@ function activityRowsHtml(filter){
       <td class="p-2">${escapeHtml(e.who||"-")}</td>
       <td class="p-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded-full text-[10px] font-semibold ${badge(e.action)}">${escapeHtml(e.action||"")}</span> ${escapeHtml(AUDIT_LABELS[e.coll]||e.coll||"")}</td>
       <td class="p-2">${escapeHtml(e.label||"")}</td>
+      <td class="p-2 text-right whitespace-nowrap">${e.id ? `<button onclick="deleteActivityEntry('${e.id}')" class="text-error hover:underline font-semibold" title="Hapus catatan ini">Hapus</button>` : ""}</td>
     </tr>`).join("");
 }
-function filterActivityLog(v){
+function activityCountText(){
+  const total = (DB.activityLog||[]).length, n = activityFiltered().length;
+  const shown = Math.min(n, 200);
+  return (n === total ? "" : n+" catatan cocok dari "+total+". ") + "Menampilkan "+shown+" catatan terbaru. Perubahan yang dilakukan sebelum fitur ini aktif tidak tercatat.";
+}
+function filterActivityLog(){
+  const g = id => (document.getElementById(id)||{}).value || "";
+  activityFilter = { q:g("activity-q"), from:g("activity-from"), to:g("activity-to") };
   const tb = document.getElementById("activity-log-body");
-  if(tb) tb.innerHTML = activityRowsHtml(v);
+  if(tb) tb.innerHTML = activityRowsHtml();
+  const c = document.getElementById("activity-log-count");
+  if(c) c.textContent = activityCountText();
+}
+function resetActivityFilter(){
+  activityFilter = { q:"", from:"", to:"" };
+  ["activity-q","activity-from","activity-to"].forEach(id=>{ const el = document.getElementById(id); if(el) el.value = ""; });
+  filterActivityLog();
+}
+async function deleteActivityEntry(id){
+  if(!isAdmin()){ toast("Hanya Admin yang dapat menghapus riwayat.", "error"); return; }
+  if(!confirm("Hapus catatan riwayat ini? Tindakan ini tidak bisa dibatalkan.")) return;
+  await saveDBFresh(db=>{ db.activityLog = (db.activityLog||[]).filter(e=>e.id !== id); });
+  toast("Catatan riwayat dihapus.");
+  filterActivityLog();
 }
 function downloadActivityCsv(){
-  const rows = [["Waktu","Oleh","Aksi","Kategori","Keterangan"]].concat((DB.activityLog||[]).map(e=>[e.ts,e.who,e.action,AUDIT_LABELS[e.coll]||e.coll,e.label]));
+  const rows = [["Waktu","Oleh","Aksi","Kategori","Keterangan"]].concat(activityFiltered().map(e=>[e.ts,e.who,e.action,AUDIT_LABELS[e.coll]||e.coll,e.label]));
   const csv = rows.map(r=>r.map(c=>'"'+String(c==null?"":c).replace(/"/g,'""')+'"').join(",")).join("\n");
   sbDownloadText("SIBEST-riwayat-aktivitas-"+sbNowStamp()+".csv", "\ufeff"+csv, "text/csv;charset=utf-8");
 }
@@ -10533,14 +10591,21 @@ function renderControlAdminExtras(){
       </div>`) +
     card("Riwayat Aktivitas", "history", `
       <div class="flex flex-wrap gap-2 mb-3">
-        <input oninput="filterActivityLog(this.value)" placeholder="Cari nama, aksi, atau data..." class="flex-1 min-w-[180px] px-3 py-2 rounded-lg border border-outline-variant text-sm outline-none focus:border-primary"/>
+        <input id="activity-q" value="${escapeHtml(activityFilter.q)}" oninput="filterActivityLog()" placeholder="Cari nama, aksi, atau data..." class="flex-1 min-w-[180px] px-3 py-2 rounded-lg border border-outline-variant text-sm outline-none focus:border-primary"/>
         <button onclick="downloadActivityCsv()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2 px-3">Unduh CSV</button>
       </div>
-      <div class="overflow-x-auto max-h-96 overflow-y-auto border border-outline-variant rounded-lg">
-        <table class="w-full text-left text-xs"><thead class="bg-surface-container sticky top-0"><tr><th class="p-2">Waktu</th><th class="p-2">Oleh</th><th class="p-2">Aksi</th><th class="p-2">Data</th></tr></thead>
-        <tbody id="activity-log-body">${activityRowsHtml("")}</tbody></table>
+      <div class="flex flex-wrap items-end gap-2 mb-3">
+        <div><label class="block text-[11px] text-on-surface-variant mb-1">Dari tanggal</label>
+          <input id="activity-from" type="date" value="${activityFilter.from}" onchange="filterActivityLog()" class="px-3 py-2 rounded-lg border border-outline-variant text-sm outline-none focus:border-primary"/></div>
+        <div><label class="block text-[11px] text-on-surface-variant mb-1">Sampai tanggal</label>
+          <input id="activity-to" type="date" value="${activityFilter.to}" onchange="filterActivityLog()" class="px-3 py-2 rounded-lg border border-outline-variant text-sm outline-none focus:border-primary"/></div>
+        <button onclick="resetActivityFilter()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2 px-3">Reset</button>
       </div>
-      <p class="text-[11px] text-on-surface-variant mt-2">Menampilkan 200 catatan terbaru. Perubahan yang dilakukan sebelum fitur ini aktif tidak tercatat.</p>`) +
+      <div class="overflow-x-auto max-h-96 overflow-y-auto border border-outline-variant rounded-lg">
+        <table class="w-full text-left text-xs"><thead class="bg-surface-container sticky top-0"><tr><th class="p-2">Waktu</th><th class="p-2">Oleh</th><th class="p-2">Aksi</th><th class="p-2">Data</th><th class="p-2 text-right">Hapus</th></tr></thead>
+        <tbody id="activity-log-body">${activityRowsHtml()}</tbody></table>
+      </div>
+      <p id="activity-log-count" class="text-[11px] text-on-surface-variant mt-2">${activityCountText()}</p>`) +
     card("Tahun Ajaran Baru", "school", `
       <p class="text-xs text-on-surface-variant mb-3">Naikkan kelas semua santri sekaligus, dan arsipkan data lama supaya aplikasi tetap ringan.</p>
       <div class="flex flex-wrap gap-2">
@@ -10768,18 +10833,26 @@ function fillWaTemplate(tpl, s, arr){
     .replace(/\{jumlah\}/g, formatRupiah(arr.total))
     .replace(/\{sekolah\}/g, SB_SCHOOL);
 }
-function paymentReminderInfo(s){
-  const arr = studentArrears(s);
+function monthArrears(s, mk){
+  const fee = studentMonthlyFee(s.id);
+  const label = MONTHS_ID[parseInt(mk.slice(5),10)-1]+" "+mk.slice(0,4);
+  const items = []; let total = 0;
+  if(paymentStatus(s.id, mk) !== "paid"){ items.push({ mk, label, amount:fee, kind:"belum" }); total += fee; }
+  else { const paid = paymentAmountPaid(s.id, mk); if(paid < fee){ items.push({ mk, label, amount:fee-paid, kind:"kurang" }); total += fee-paid; } }
+  return { fee, items, total };
+}
+function paymentReminderInfo(s, mk){
+  const arr = mk ? monthArrears(s, mk) : studentArrears(s);
   if(!arr.items.length) return { ok:false, reason:"lunas", arr };
   if(!arr.fee) return { ok:false, reason:"nofee", arr };
   const tpl = (DB.settings && DB.settings.waReminderTemplate) || DEFAULT_WA_REMINDER;
   const text = fillWaTemplate(tpl, s, arr);
   return { ok:true, arr, text, url: sbWaUrl(s.parentPhone, text) };
 }
-function sendPaymentReminder(id){
+function sendPaymentReminder(id, mk){
   const s = studentById(id);
   if(!s) return;
-  const info = paymentReminderInfo(s);
+  const info = paymentReminderInfo(s, mk);
   if(!info.ok){
     toast(info.reason === "lunas" ? s.name+" tidak memiliki tunggakan." : "Isi dulu kolom Bayaran/Bln untuk "+s.name+".", info.reason === "lunas" ? "ok" : "error");
     return;
@@ -10840,12 +10913,12 @@ function receiptPaidMonths(s){
   }
   return out;
 }
-function openReceiptModal(studentId){
+function openReceiptModal(studentId, mKey){
   const s = studentById(studentId);
   if(!s) return;
   const paid = receiptPaidMonths(s);
   if(!paid.length){ toast(s.name+" belum memiliki bulan yang berstatus lunas pada tahun ini.", "error"); return; }
-  const lastMk = paid[paid.length-1].mk;
+  const lastMk = (mKey && paid.some(p=>p.mk===mKey)) ? mKey : paid[paid.length-1].mk;
   sbModal("receipt", "Kwitansi Pembayaran — "+s.name, `
     <p class="text-xs text-on-surface-variant mb-3">Pilih bulan yang dimasukkan ke dalam kwitansi.</p>
     <div class="space-y-1.5 max-h-56 overflow-y-auto border border-outline-variant rounded-lg p-3">
@@ -11018,7 +11091,7 @@ function attendanceInputHtml(){
   const classKey = attClass || "*";
   const recorded = saved && ((saved.k||["*"]).includes("*") || (saved.k||["*"]).includes(classKey));
   const pill = (sid, code, cur)=>{
-    const on = { H:"peer-checked:bg-primary peer-checked:text-white", I:"peer-checked:bg-tertiary peer-checked:text-white", S:"peer-checked:bg-secondary peer-checked:text-white", A:"peer-checked:bg-error peer-checked:text-white" }[code];
+    const on = "peer-checked:bg-primary peer-checked:border-primary peer-checked:text-white";
     return `<label class="cursor-pointer"><input type="radio" name="att-${sid}" value="${code}" class="peer sr-only" ${cur===code?"checked":""}/><span class="inline-block min-w-[34px] text-center px-2.5 py-1 rounded-full text-xs font-semibold border border-outline-variant text-on-surface-variant ${on}" title="${ATT_LABELS[code]}">${code}</span></label>`;
   };
   return `
@@ -11032,13 +11105,13 @@ function attendanceInputHtml(){
           <button onclick="saveAttendance()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 px-4">Simpan Absensi</button>
         </div>
       </div>
-      <p class="px-5 pt-3 text-[11px] text-on-surface-variant">H = Hadir, I = Izin, S = Sakit, A = Alfa. Santri yang punya izin pulang disetujui pada tanggal ini otomatis terisi Izin (bila belum disimpan).</p>
+      <p class="px-5 pt-3 text-[11px] text-on-surface-variant">H = Hadir, I = Izin, S = Sakit, A = Alfa. Klik salah satu huruf untuk tiap santri — yang dipilih akan berwarna hijau. Santri yang punya izin pulang disetujui pada tanggal ini otomatis terisi Izin (bila belum disimpan).</p>
       <div class="overflow-x-auto"><table class="w-full text-sm mt-2"><thead class="bg-surface-container text-xs uppercase text-on-surface-variant"><tr><th class="p-3 text-left">Santri</th><th class="p-3 text-left">Kelas</th><th class="p-3 text-left">Kehadiran</th></tr></thead><tbody>
       ${list.map(s=>{
-        let cur = "H";
+        let cur = "";
         if(recorded) cur = attendanceCodeFor(attDate, s.id) || "H";
         else if(izinCoversDate(s.id, attDate)) cur = "I";
-        return `<tr class="border-t border-outline-variant"><td class="p-3 font-medium">${escapeHtml(s.name)}</td><td class="p-3 text-on-surface-variant">${escapeHtml(s.kelas||"-")}</td>
+        return `<tr data-att-row="${s.id}" class="border-t border-outline-variant"><td class="p-3 font-medium">${escapeHtml(s.name)}</td><td class="p-3 text-on-surface-variant">${escapeHtml(s.kelas||"-")}</td>
           <td class="p-3"><div class="flex gap-1.5">${["H","I","S","A"].map(c=>pill(s.id,c,cur)).join("")}</div></td></tr>`;
       }).join("") || `<tr><td colspan="3" class="p-6 text-center text-on-surface-variant">Belum ada data siswa${attClass?" di kelas ini":""}.</td></tr>`}
       </tbody></table></div>
@@ -11049,10 +11122,20 @@ function attAllPresent(){
 }
 async function saveAttendance(){
   const picks = {};
+  const missing = [];
   attStudents().forEach(s=>{
     const c = document.querySelector(`input[name="att-${s.id}"]:checked`);
-    picks[s.id] = c ? c.value : "H";
+    const row = document.querySelector(`tr[data-att-row="${s.id}"]`);
+    if(row) row.style.background = "";
+    if(c) picks[s.id] = c.value; else missing.push({ s, row });
   });
+  if(missing.length){
+    missing.forEach(m=>{ if(m.row) m.row.style.background = "#fdecea"; });
+    const first = missing[0].row;
+    if(first && first.scrollIntoView) first.scrollIntoView({ behavior:"smooth", block:"center" });
+    toast(missing.length+" santri belum dipilih kehadirannya (H/I/S/A).", "error");
+    return;
+  }
   const date = attDate, classKey = attClass || "*";
   await saveDBFresh(db=>{
     if(!db.attendance) db.attendance = {};
@@ -11398,11 +11481,12 @@ function buildAttendanceContext(question){
   window.enterTeacherApp = function(acc, slug){
     teacherRole = (acc && typeof acc === "object" && acc.role) || null;
     const r = enterF.apply(this, arguments);
+    updateRoleBadge();
     resolveTeacherRole(acc, slug);
     return r;
   };
   const outF = window.teacherLogout;
-  window.teacherLogout = function(){ teacherRole = null; return outF.apply(this, arguments); };
+  window.teacherLogout = function(){ teacherRole = null; updateRoleBadge(); return outF.apply(this, arguments); };
 
   // kabari orang tua setelah izin/kunjungan diputuskan
   const izinF = window.setIzinStatus;

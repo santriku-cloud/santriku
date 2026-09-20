@@ -4607,12 +4607,14 @@ async function addVisitRequest({ studentId, day, date, time, keperluan, requeste
   DB.visits.push({ id: uid("vis"), studentId, day, date: date || "", time, keperluan, requestedBy, status: "pending", createdAt: todayISO() });
   notifyVisitEmail(studentById(studentId), date ? (day+", "+formatDate(date)) : day, time, keperluan, requestedBy);
   await saveDB();
+  if(typeof sibestPushNotify === "function") sibestPushNotify("kunjungan");
 }
 
 async function addIzinRequest({ studentId, keperluan, startDate, endDate, requestedBy, jemput, waPenjemput }){
   DB.izinRequests.push({ id: uid("izn"), studentId, keperluan, startDate, endDate, requestedBy, jemput: jemput || "", waPenjemput: waPenjemput || "", status: "pending", createdAt: new Date().toISOString() });
   notifyIzinEmail(studentById(studentId), keperluan, startDate, endDate, requestedBy);
   await saveDB();
+  if(typeof sibestPushNotify === "function") sibestPushNotify("izin");
 }
 
 async function setVisitStatus(id, status){
@@ -8008,6 +8010,7 @@ async function submitViolationReport(){
       });
     });
     toast("Laporan berhasil dikirim. Terima kasih sudah berani melapor.");
+    if(typeof sibestPushNotify === "function") sibestPushNotify("pelanggaran");
     resetViolationReportForm();
   } catch(e){
     console.error(e);
@@ -8248,6 +8251,7 @@ async function teacherRegister(){
     const acc = { name, email, salt, passwordHash, photo: null, createdAt: new Date().toISOString(), status: isFirstAccount ? "approved" : "pending", role: isFirstAccount ? "admin" : "guru" };
     await window.fb.set(window.fb.ref(window.fb.db, "teacherAccountsV2/" + slug), acc);
     await window.fb.set(window.fb.ref(window.fb.db, "teacherEmailIndexV2/" + emailKey), slug);
+    if(!isFirstAccount && typeof sibestPushNotify === "function") sibestPushNotify("akun_baru");
     if(isFirstAccount){
       localStorage.setItem("teacherSessionSlug", slug);
       toast("Pendaftaran berhasil!");
@@ -9962,6 +9966,7 @@ async function submitHafalanReport(){
       if(!duplicate) db.hafalanReports.push({...candidate,id:uid('hf'),createdAt:new Date().toISOString()});
     });
     if(duplicate){ toast('Laporan hafalan yang sama sudah tercatat.', 'error'); return; }
+    if(typeof sibestPushNotify === "function") sibestPushNotify("hafalan");
     toast('Laporan hafalan berhasil dikirim.'); resetHafalanForm(); backToPublicGateway();
   } finally {
     hafalanSubmitBusy = false;
@@ -10228,6 +10233,7 @@ async function resolveTeacherRole(acc, slug){
       const fn = TEACHER_RENDERERS[currentTeacherPage];
       if(fn && !isUserTyping()) fn();
     }
+    if(typeof syncPushRegistration === "function") syncPushRegistration();
   }catch(e){ console.error("Gagal menentukan peran:", e); }
 }
 function visibleTeacherNavItems(){
@@ -10687,6 +10693,7 @@ function renderControlAdminExtras(){
         <button onclick="openPromotionModal()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4">Naik Kelas</button>
         <button onclick="openArchiveModal()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2.5 px-4">Arsipkan Data Lama</button>
       </div>`) +
+    card("Notifikasi (Pengaturan Admin)", "notifications_active", pushAdminCardHtml()) +
     card("Pasang di HP", "install_mobile", `
       <p class="text-xs text-on-surface-variant mb-3">Pasang SIBEST di layar utama HP atau komputer supaya terbuka seperti aplikasi biasa.</p>
       <button id="pwa-install-btn" onclick="installPwa()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4">Pasang Aplikasi</button>`);
@@ -11461,6 +11468,15 @@ function renderDashboardExtras(){
       </div>`;
     }
   }
+  try{
+    if(pushSupported() && pushVapidKey() && Notification.permission === "default" && !pushTokenLocal()){
+      html += `<div class="mt-6 p-4 rounded-xl bg-secondary-container text-on-secondary-container flex flex-wrap items-center gap-3">
+        <span class="material-symbols-outlined">notifications_active</span>
+        <p class="text-sm flex-1 min-w-[200px]">Aktifkan notifikasi supaya HP berbunyi saat ada laporan hafalan, izin, atau kunjungan baru.</p>
+        <button onclick="enablePush()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2 px-4">Aktifkan</button>
+      </div>`;
+    }
+  }catch(e){ console.error(e); }
   try{ html += dashboardExtraChartsHtml(); }catch(e){ console.error(e); }
   box.innerHTML = html;
   el.appendChild(box);
@@ -11485,6 +11501,7 @@ function renderPaymentsToolbar(){
   el.prepend(bar);
 }
 function afterControlRender(){
+  renderPushCard();
   if(isAdmin()){ renderControlAdminExtras(); return; }
   ["control-teacher-pending-body","control-teacher-accounts-body"].forEach(id=>{
     const t = document.getElementById(id);
@@ -11519,6 +11536,183 @@ function buildAttendanceContext(question){
   lines.push("Santri dengan ketidakhadiran (urut alfa terbanyak) — nama | kelas | hadir | izin | sakit | alfa | % hadir:");
   rows.slice(0,50).forEach(r=>lines.push("- "+r.s.name+" | "+(r.s.kelas||"-")+" | "+r.c.H+" | "+r.c.I+" | "+r.c.S+" | "+r.c.A+" | "+Math.round(r.c.H/r.c.days*100)+"%"));
   return lines.join("\n");
+}
+
+
+/* =========================================================
+   NOTIFIKASI PUSH (guru & admin)
+   Cara kerja: HP guru didaftarkan ke Worker. Saat ada laporan/pengajuan baru, aplikasi
+   memberi tahu Worker, lalu Worker mengirim notifikasi lewat Firebase Cloud Messaging.
+   Isi notifikasi umum saja (tanpa nama santri).
+   ========================================================= */
+function pushBase(){ return String(DEFAULT_AI_ENDPOINT).replace(/\/api\/ai\/?$/, ""); }
+function pushVapidKey(){ return (DB && DB.settings && DB.settings.pushVapidKey) || ""; }
+function pushSupported(){
+  return ("serviceWorker" in navigator) && ("PushManager" in window) && ("Notification" in window) && !!window.fbMsg;
+}
+function pushTokenLocal(){ try{ return localStorage.getItem("sibestPushToken") || ""; }catch(e){ return ""; } }
+function pushIsEnabled(){ return pushSupported() && Notification.permission === "granted" && !!pushTokenLocal(); }
+
+async function pushGetToken(){
+  const m = await window.fbMsg.load();
+  const reg = await navigator.serviceWorker.register("sw.js");
+  await navigator.serviceWorker.ready;
+  return await m.getToken(m.getMessaging(m.app), { vapidKey: pushVapidKey(), serviceWorkerRegistration: reg });
+}
+async function pushRegisterToken(token){
+  const res = await fetch(pushBase()+"/api/push/register", {
+    method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({ token, slug: teacherSlug || "", name: teacherName || "", role: isAdmin() ? "admin" : "guru" })
+  });
+  if(!res.ok){
+    let msg = "kode "+res.status;
+    try{ const j = await res.json(); if(j && j.error) msg = j.error; }catch(e){}
+    throw new Error(msg);
+  }
+}
+async function enablePush(){
+  if(!pushSupported()){ toast("HP atau browser ini belum mendukung notifikasi.", "error"); return; }
+  if(!pushVapidKey()){ toast("Notifikasi belum disiapkan oleh Admin (kunci VAPID belum diisi).", "error"); return; }
+  try{
+    const perm = await Notification.requestPermission();
+    if(perm !== "granted"){ toast("Izin notifikasi tidak diberikan.", "error"); renderPushCardBody(); return; }
+    const token = await pushGetToken();
+    if(!token) throw new Error("token kosong");
+    await pushRegisterToken(token);
+    try{ localStorage.setItem("sibestPushToken", token); }catch(e){}
+    toast("Notifikasi diaktifkan di perangkat ini.");
+  }catch(e){
+    console.error(e);
+    toast("Gagal mengaktifkan notifikasi: "+(e && e.message ? e.message : "kesalahan"), "error");
+  }
+  renderPushCardBody();
+}
+async function disablePush(){
+  const token = pushTokenLocal();
+  if(token){
+    try{
+      await fetch(pushBase()+"/api/push/unregister", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ token }) });
+    }catch(e){}
+    try{ const m = await window.fbMsg.load(); await m.deleteToken(m.getMessaging(m.app)); }catch(e){}
+  }
+  try{ localStorage.removeItem("sibestPushToken"); }catch(e){}
+  toast("Notifikasi dimatikan di perangkat ini.");
+  renderPushCardBody();
+}
+/* Dipanggil setelah guru masuk: perbarui pendaftaran HP (nama, peran, dan token bila berubah) */
+async function syncPushRegistration(){
+  try{
+    if(!pushSupported() || !pushVapidKey() || Notification.permission !== "granted" || !pushTokenLocal()) return;
+    const token = await pushGetToken();
+    if(!token) return;
+    await pushRegisterToken(token);
+    try{ localStorage.setItem("sibestPushToken", token); }catch(e){}
+  }catch(e){ console.error("sync push:", e); }
+}
+/* Memberi tahu Worker bahwa ada kejadian baru (dipanggil dari halaman siapa pun, tanpa menunggu hasil) */
+function sibestPushNotify(type){
+  try{
+    if(!pushVapidKey()) return;
+    fetch(pushBase()+"/api/push/notify", {
+      method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ type }), keepalive:true
+    }).catch(()=>{});
+  }catch(e){}
+}
+
+/* Hapus angka/lencana dan notifikasi lama saat aplikasi dibuka */
+function pushClearBadge(){
+  try{ if(navigator.clearAppBadge) navigator.clearAppBadge(); }catch(e){}
+  try{
+    if("serviceWorker" in navigator){
+      navigator.serviceWorker.getRegistration().then(r=>{
+        if(r && r.getNotifications) r.getNotifications().then(list=>list.forEach(n=>n.close())).catch(()=>{});
+      }).catch(()=>{});
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") pushClearBadge(); });
+window.addEventListener("load", pushClearBadge);
+
+/* ---------- kartu di halaman Kontrol (semua guru) ---------- */
+function pushCardInner(){
+  let status = "", btn = "";
+  if(!("Notification" in window) || !("serviceWorker" in navigator)){
+    status = "HP atau browser ini belum mendukung notifikasi. Gunakan Chrome, dan pasang SIBEST ke layar utama.";
+  } else if(!pushVapidKey()){
+    status = "Notifikasi belum disiapkan. Minta Admin menyelesaikan pengaturan notifikasi di halaman Kontrol.";
+  } else if(Notification.permission === "denied"){
+    status = "Izin notifikasi diblokir di HP ini. Buka pengaturan aplikasi atau situs di HP, lalu izinkan notifikasi.";
+  } else if(pushIsEnabled()){
+    status = "Aktif di perangkat ini. HP akan berbunyi saat ada laporan hafalan, izin, kunjungan, atau laporan pelanggaran baru.";
+    btn = `<button onclick="disablePush()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2.5 px-4">Matikan di perangkat ini</button>`;
+  } else {
+    status = "Belum aktif di perangkat ini.";
+    btn = `<button onclick="enablePush()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4">Aktifkan Notifikasi</button>`;
+  }
+  return `<p class="text-sm ${pushIsEnabled() ? "text-secondary font-semibold" : "text-on-surface-variant"} mb-3">${status}</p>${btn}
+    <p class="text-[11px] text-on-surface-variant mt-3">Isi notifikasi bersifat umum (tanpa nama santri). Angka pada ikon aplikasi mengikuti jumlah notifikasi yang belum dibuka, dan tampilannya bergantung pada HP.</p>`;
+}
+function renderPushCardBody(){
+  const el = document.getElementById("push-card-body");
+  if(el) el.innerHTML = pushCardInner();
+}
+function renderPushCard(){
+  const host = document.getElementById("teacher-content");
+  if(!host) return;
+  const old = document.getElementById("push-card");
+  if(old) old.remove();
+  const box = document.createElement("div");
+  box.id = "push-card";
+  box.className = "mt-6 max-w-3xl bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant";
+  box.innerHTML = `<div class="px-5 py-4 flex items-center gap-2 font-display font-bold border-b border-outline-variant"><span class="material-symbols-outlined text-primary">notifications_active</span>Notifikasi di Perangkat Ini</div>
+    <div class="px-5 py-4" id="push-card-body">${pushCardInner()}</div>`;
+  host.appendChild(box);
+}
+
+/* ---------- pengaturan notifikasi untuk Admin ---------- */
+function pushAdminCardHtml(){
+  return `
+    <p class="text-xs text-on-surface-variant mb-3">Langkah pengaturan ada di panduan. Setelah kunci VAPID diisi dan Worker siap, tekan Cek Koneksi lalu Kirim Tes.</p>
+    <label class="block text-xs font-semibold mb-1">Kunci VAPID (Web Push certificate) dari Firebase</label>
+    <input id="set-push-vapid" value="${escapeHtml((DB.settings && DB.settings.pushVapidKey) || "")}" placeholder="Tempel kunci publik di sini" class="w-full px-3 py-2 rounded-lg border border-outline-variant text-xs font-mono outline-none focus:border-primary"/>
+    <div class="flex flex-wrap gap-2 mt-3">
+      <button onclick="savePushVapid()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4">Simpan Kunci</button>
+      <button onclick="checkPushBackend()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2.5 px-4">Cek Koneksi</button>
+      <button onclick="sendPushTest()" class="border border-outline-variant rounded-lg text-sm font-semibold py-2.5 px-4">Kirim Notifikasi Tes</button>
+    </div>
+    <p id="push-admin-status" class="text-xs mt-3 text-on-surface-variant"></p>`;
+}
+async function savePushVapid(){
+  if(!requireAdmin()) return;
+  const v = ((document.getElementById("set-push-vapid")||{}).value || "").trim();
+  await saveDBFresh(db=>{ if(!db.settings) db.settings = {}; db.settings.pushVapidKey = v; });
+  toast(v ? "Kunci VAPID disimpan." : "Kunci VAPID dihapus. Notifikasi dinonaktifkan.");
+}
+function pushAdminStatus(html){ const el = document.getElementById("push-admin-status"); if(el) el.innerHTML = html; }
+async function checkPushBackend(){
+  pushAdminStatus("Memeriksa...");
+  try{
+    const res = await fetch(pushBase()+"/api/push/status");
+    const j = await res.json();
+    const yes = "<b class='text-secondary'>siap</b>", no = "<b class='text-error'>belum</b>";
+    pushAdminStatus("Worker: "+(j.ok ? yes : no)+" • Kunci Firebase (FCM_SERVICE_ACCOUNT): "+(j.fcm ? yes : no)+" • Penyimpanan KV (PUSH_KV): "+(j.kv ? yes : no)+" • Perangkat terdaftar: <b>"+(j.devices == null ? "-" : j.devices)+"</b> • Kunci VAPID di aplikasi: "+(pushVapidKey() ? yes : no));
+  }catch(e){
+    pushAdminStatus("<span class='text-error'>Worker tidak bisa dihubungi. Pastikan kode Worker terbaru sudah di-deploy.</span>");
+  }
+}
+async function sendPushTest(){
+  if(!requireAdmin()) return;
+  if(!pushVapidKey()){ pushAdminStatus("<span class='text-error'>Isi dan simpan kunci VAPID dulu.</span>"); return; }
+  pushAdminStatus("Mengirim...");
+  try{
+    const res = await fetch(pushBase()+"/api/push/notify", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ type:"tes" }) });
+    const j = await res.json();
+    if(!j.ok){ pushAdminStatus("<span class='text-error'>Gagal: "+escapeHtml(j.error||"kesalahan")+"</span>"); return; }
+    if(j.skipped === "cooldown"){ pushAdminStatus("Tunggu 1 menit sebelum mengirim tes lagi."); return; }
+    pushAdminStatus("Terkirim ke <b>"+j.sent+"</b> dari "+j.devices+" perangkat"+(j.removed ? ", "+j.removed+" perangkat lama dihapus" : "")+(j.failed ? ", "+j.failed+" gagal" : "")+". Jika notifikasi tidak muncul, tutup aplikasinya dulu (notifikasi tidak ditampilkan saat aplikasi sedang terbuka).");
+  }catch(e){
+    pushAdminStatus("<span class='text-error'>Worker tidak bisa dihubungi.</span>");
+  }
 }
 
 /* ---------- pemasangan hook ---------- */
@@ -11663,6 +11857,14 @@ function buildAttendanceContext(question){
 
   // Diakses oleh script utama (non-module) di atas lewat window.fb
   window.fb = { db, ref, get, set, onValue };
+
+  // Firebase Cloud Messaging: dimuat hanya ketika guru mengaktifkan notifikasi
+  window.fbMsg = {
+    load: async () => {
+      const m = await import("https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging.js");
+      return { getMessaging: m.getMessaging, getToken: m.getToken, deleteToken: m.deleteToken, app: fbApp };
+    }
+  };
 
   window.__fbReady = true;
   if (window.initApp) window.initApp();

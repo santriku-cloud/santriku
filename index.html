@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script>(function(){try{if(localStorage.getItem("sibestViewMode")==="desktop" && screen.width<900){document.querySelector('meta[name="viewport"]').setAttribute("content","width=900, user-scalable=yes");}}catch(e){}})();</script>
 <title>SMK MUHAMMADIYAH KENDARI</title>
 <link rel="manifest" href="manifest.webmanifest"/>
 <meta name="theme-color" content="#0f6b3c"/>
@@ -127,6 +128,74 @@ tailwind.config = {
   #screen-public-gateway .public-gateway-menu::after { content: ""; position: absolute; width: 4rem; height: 4rem; right: -1rem; bottom: -2rem; border-radius: 999px; background: rgba(255,255,255,.18); transition: transform .3s ease; }
   #screen-public-gateway .public-gateway-menu:hover::after, #screen-public-gateway .public-gateway-menu:active::after { transform: scale(1.8); }
   @media (max-width: 640px) { #screen-public-gateway .public-gateway-card { padding: 1.35rem; } #screen-public-gateway .public-gateway-logo { width: 7.25rem; height: 7.25rem; } }
+</style>
+<style>
+/* ===== TAMPILAN: HP (menu bawah + laci) / Komputer (menu samping) ===== */
+.tm-bottom-nav,.tm-scrim{display:none}
+.tm-drawer{display:none}
+body.ui-mobile-active .tm-bottom-nav{display:flex}
+body.ui-mobile-active .tm-drawer{display:flex}
+body.ui-mobile-active .tm-scrim{display:block}
+body.ui-mobile-active #teacher-nav-mobile{display:none !important}
+body.ui-mobile-active #screen-teacher > nav{display:none !important}
+body.ui-mobile-active #screen-teacher > main{margin-left:0 !important}
+body.ui-mobile-active #teacher-hamburger{display:inline-flex !important}
+body.ui-mobile-active #screen-teacher header > div{height:64px !important}
+body.ui-mobile-active #screen-teacher header button[onclick^="teacherLogout"]{display:none !important}
+body.ui-mobile-active #teacher-content{padding-bottom:104px !important}
+body.ui-mobile-active.ui-wide{background:#e3eee6}
+body.ui-mobile-active.ui-wide #screen-teacher > main{max-width:640px;margin:0 auto !important;box-shadow:0 0 0 1px #cfddd2,0 12px 40px rgba(21,31,23,.10)}
+
+.tm-bottom-nav{position:fixed;left:0;right:0;bottom:0;z-index:60;height:calc(66px + env(safe-area-inset-bottom,0px));padding:6px 6px env(safe-area-inset-bottom,0px);background:#fff;border-top:1px solid #d9e5db;box-shadow:0 -6px 20px rgba(21,31,23,.07);align-items:stretch;justify-content:space-around}
+body.ui-wide .tm-bottom-nav{left:50%;right:auto;width:640px;max-width:100%;transform:translateX(-50%)}
+.tm-tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:0;padding:0;color:#6c7d70;cursor:pointer;-webkit-tap-highlight-color:transparent;font-family:inherit}
+.tm-pill{display:flex;align-items:center;justify-content:center;width:56px;height:30px;border-radius:999px;transition:background .2s,color .2s}
+.tm-pill .material-symbols-outlined{font-size:24px}
+.tm-lbl{font-size:10.5px;line-height:1;font-weight:600;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tm-tab:active .tm-pill{background:#eef6f0}
+.tm-tab.on{color:#0f6b3c}
+.tm-tab.on .tm-pill{background:#c6f0d2}
+.tm-tab.on .material-symbols-outlined{font-variation-settings:'FILL' 1,'wght' 500,'GRAD' 0,'opsz' 24}
+.tm-tab.on .tm-lbl{font-weight:800}
+
+.tm-scrim{position:fixed;inset:0;z-index:1090;background:rgba(10,20,13,.5);opacity:0;pointer-events:none;transition:opacity .25s}
+.tm-scrim.open{opacity:1;pointer-events:auto}
+.tm-drawer{position:fixed;top:0;bottom:0;left:0;z-index:1100;width:min(86vw,330px);flex-direction:column;background:#f5faf6;box-shadow:8px 0 30px rgba(0,0,0,.22);transform:translateX(-104%);visibility:hidden;transition:transform .27s cubic-bezier(.2,.8,.2,1),visibility 0s .27s}
+.tm-drawer.open{transform:none;visibility:visible;transition:transform .27s cubic-bezier(.2,.8,.2,1),visibility 0s}
+.tm-dr-head{position:relative;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 16px;color:#fff;background:linear-gradient(140deg,#0f6b3c 0%,#2e9254 70%,#5c6b12 130%)}
+.tm-dr-brand{display:flex;align-items:center;gap:10px;padding-right:34px}
+.tm-dr-brand img{width:40px;height:40px;border-radius:10px;background:#fff;object-fit:contain;padding:2px;flex-shrink:0}
+.tm-dr-school{font-family:Manrope,sans-serif;font-weight:800;font-size:13px;line-height:1.2}
+.tm-dr-sub{font-size:11px;opacity:.85;margin-top:2px}
+.tm-dr-close{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:10px;width:34px;height:34px;border-radius:999px;border:0;background:rgba(255,255,255,.16);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.tm-dr-user{display:flex;align-items:center;gap:12px;margin-top:16px;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.14)}
+.tm-avatar{width:44px;height:44px;border-radius:999px;background:#fff;color:#0f6b3c;display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden;flex-shrink:0;box-shadow:0 0 0 2px rgba(255,255,255,.55)}
+.tm-avatar img{width:100%;height:100%;object-fit:cover;border-radius:0}
+.tm-dr-name{font-family:Manrope,sans-serif;font-weight:700;font-size:15px;line-height:1.2;word-break:break-word}
+.tm-dr-role{display:inline-block;margin-top:4px;padding:2px 8px;border-radius:999px;background:#c6f0d2;color:#0f6b3c;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.tm-dr-body{flex:1;min-height:0;overflow-y:auto;padding:8px 10px 12px;-webkit-overflow-scrolling:touch}
+.tm-sec{margin:14px 10px 6px;font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#6c7d70}
+.tm-link{display:flex;align-items:center;gap:14px;width:100%;padding:11px 14px;margin:2px 0;border:0;border-radius:14px;background:none;color:#3f4d42;font-family:inherit;font-size:14.5px;font-weight:500;text-align:left;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.tm-link .material-symbols-outlined{font-size:22px;color:#6c7d70}
+.tm-link:active{background:#e6f1e9}
+.tm-link.on{background:#c6f0d2;color:#0f6b3c;font-weight:700}
+.tm-link.on .material-symbols-outlined{color:#0f6b3c;font-variation-settings:'FILL' 1,'wght' 500,'GRAD' 0,'opsz' 24}
+.tm-dr-foot{padding:10px 10px calc(12px + env(safe-area-inset-bottom,0px));border-top:1px solid #d9e5db;background:#fff}
+.tm-link small{margin-left:auto;font-size:11px;font-weight:600;color:#0f6b3c;background:#eef6f0;padding:2px 8px;border-radius:999px}
+.tm-link.danger,.tm-link.danger .material-symbols-outlined{color:#ba1a1a}
+
+/* pilihan di kotak "Tampilan Aplikasi" */
+.tm-note{font-size:12.5px;color:#3f4d42;margin:0 0 14px}
+.tm-opt{display:flex;align-items:center;gap:14px;width:100%;padding:14px;margin-bottom:10px;border:1.5px solid #bfccc1;border-radius:16px;background:#fff;text-align:left;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}
+.tm-opt:hover{border-color:#2e9254}
+.tm-opt.on{border-color:#0f6b3c;background:#eef8f1;box-shadow:0 0 0 3px rgba(15,107,60,.10)}
+.tm-opt-ico{width:44px;height:44px;border-radius:12px;background:#e6f1e9;color:#0f6b3c;display:flex;align-items:center;justify-content:center;font-size:24px !important;flex-shrink:0}
+.tm-opt.on .tm-opt-ico{background:#0f6b3c;color:#fff}
+.tm-opt-txt{flex:1;min-width:0}
+.tm-opt-txt b{display:block;font-size:14.5px;color:#151f17}
+.tm-opt-txt small{display:block;margin-top:2px;font-size:12px;line-height:1.35;color:#3f4d42}
+.tm-opt-check{color:#bfccc1;font-size:24px !important}
+.tm-opt.on .tm-opt-check{color:#0f6b3c;font-variation-settings:'FILL' 1}
 </style>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen">
@@ -846,6 +915,9 @@ tailwind.config = {
       <ul class="space-y-1 text-sm px-2" id="teacher-nav"></ul>
     </div>
     <div class="px-4 py-4 border-t border-white/10 shrink-0">
+      <button onclick="openViewSettings()" class="w-full flex items-center gap-3 px-4 py-3 mb-1 text-outline hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Pilih tampilan HP atau Komputer">
+        <span class="material-symbols-outlined">devices</span><span>Tampilan</span>
+      </button>
       <button onclick="teacherLogout()" class="w-full flex items-center gap-3 px-4 py-3 text-outline hover:text-white hover:bg-white/10 rounded-lg transition-colors">
         <span class="material-symbols-outlined">logout</span><span>Keluar</span>
       </button>
@@ -876,6 +948,9 @@ tailwind.config = {
     </header>
     <div id="teacher-content" class="p-4 md:p-8 max-w-6xl mx-auto"></div>
   </main>
+  <div id="tm-scrim" class="tm-scrim" onclick="closeTmDrawer()"></div>
+  <aside id="tm-drawer" class="tm-drawer" aria-hidden="true" aria-label="Menu"></aside>
+  <div id="tm-bottom-nav" class="tm-bottom-nav" role="navigation" aria-label="Menu utama"></div>
 </div>
 
 <!-- ============ PARENT APP ============ -->
@@ -11605,6 +11680,146 @@ function buildAttendanceContext(question){
   window.addEventListener('resize', syncRoleLogoWidth);
   document.addEventListener('DOMContentLoaded', syncRoleLogoWidth);
   setTimeout(syncRoleLogoWidth, 100);
+</script>
+<script>
+/* =========================================================
+   TAMPILAN APLIKASI: Otomatis / HP / Komputer
+   - HP      : menu utama di bawah layar + laci menu lengkap (geser dari kiri)
+   - Komputer: menu samping tetap. Di HP, layar dibuat selebar 900px (seperti "situs desktop").
+   - Otomatis: mengikuti lebar layar perangkat.
+   Disimpan per perangkat (localStorage), bisa diubah oleh Admin maupun Guru.
+   ========================================================= */
+(function(){
+  "use strict";
+  const KEY = "sibestViewMode";
+  const BAR_IDS = ["dashboard","students","payments","attendance"];
+  const SHORT = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran", attendance:"Absensi" };
+  const GROUPS = [
+    ["Utama", ["dashboard","students","attendance","announcements"]],
+    ["Keuangan", ["payments","expenses"]],
+    ["Kesantrian", ["log-violation","violation-types","reports","izin","visits"]],
+    ["Sistem", ["laporan","control","ai-agency"]]
+  ];
+  const MODES = {
+    auto:    { label:"Otomatis",         icon:"devices",         desc:"Menyesuaikan ukuran layar perangkat. Layar kecil memakai menu bawah, layar besar memakai menu samping." },
+    mobile:  { label:"Tampilan HP",      icon:"smartphone",      desc:"Menu utama di bawah layar dan menu lengkap di laci samping. Nyaman dipakai dengan satu tangan." },
+    desktop: { label:"Tampilan Komputer",icon:"desktop_windows", desc:"Menu samping tetap seperti di komputer. Di HP, putar layar ke mode mendatar agar lebih nyaman dibaca." }
+  };
+  const $ = id => document.getElementById(id);
+  const getMode = ()=>{ try{ const m = localStorage.getItem(KEY); return MODES[m] ? m : "auto"; }catch(e){ return "auto"; } };
+  const curPage = ()=> (typeof currentTeacherPage !== "undefined" && currentTeacherPage) || "dashboard";
+  const navItems = ()=> (typeof visibleTeacherNavItems === "function" ? visibleTeacherNavItems() : TEACHER_NAV_ITEMS);
+  const isMobileLayout = ()=>{ const m = getMode(); return m === "mobile" || (m === "auto" && window.innerWidth < 768); };
+
+  function applyViewMode(){
+    const m = getMode();
+    const meta = document.querySelector('meta[name="viewport"]');
+    if(meta){
+      const want = (m === "desktop" && screen.width < 900) ? "width=900, user-scalable=yes" : "width=device-width, initial-scale=1.0";
+      if(meta.getAttribute("content") !== want) meta.setAttribute("content", want);
+    }
+    const mobile = isMobileLayout();
+    document.body.classList.toggle("ui-mobile-active", mobile);
+    document.body.classList.toggle("ui-wide", mobile && window.innerWidth >= 768);
+    if(!mobile) closeTmDrawer();
+  }
+
+  /* ---------- menu bawah ---------- */
+  function buildBottomNav(){
+    const el = $("tm-bottom-nav"); if(!el) return;
+    const byId = Object.fromEntries(navItems().map(i=>[i.id, i]));
+    const tab = (id, icon, label, click)=>`<button type="button" class="tm-tab" data-tm="${id}" onclick="${click}" aria-label="${escapeHtml(label)}"><span class="tm-pill"><span class="material-symbols-outlined">${icon}</span></span><span class="tm-lbl">${escapeHtml(label)}</span></button>`;
+    el.innerHTML = BAR_IDS.map(id=>byId[id]).filter(Boolean).map(i=>tab(i.id, i.icon, SHORT[i.id]||i.label, "teacherGo('"+i.id+"')")).join("")
+      + tab("__menu", "menu", "Menu", "openTmDrawer()");
+    syncActive(curPage());
+  }
+
+  /* ---------- laci menu ---------- */
+  function buildDrawer(){
+    const dr = $("tm-drawer"); if(!dr) return;
+    const vis = navItems();
+    const byId = Object.fromEntries(vis.map(i=>[i.id, i]));
+    const used = new Set();
+    const link = i=>`<button type="button" class="tm-link" data-tm-dr="${i.id}" onclick="teacherGo('${i.id}')"><span class="material-symbols-outlined">${i.icon}</span><span>${escapeHtml(i.label)}</span></button>`;
+    const section = (label, list)=> list.length ? `<div class="tm-sec">${label}</div>${list.map(link).join("")}` : "";
+    let body = GROUPS.map(([label, ids])=>{ const list = ids.map(id=>byId[id]).filter(Boolean); list.forEach(i=>used.add(i.id)); return section(label, list); }).join("");
+    body += section("Lainnya", vis.filter(i=>!used.has(i.id)));
+    const av = $("teacher-avatar");
+    const role = (typeof teacherRole !== "undefined" && teacherRole) ? (teacherRole === "admin" ? "Admin" : "Guru") : "";
+    dr.innerHTML = `
+      <div class="tm-dr-head">
+        <button type="button" class="tm-dr-close" onclick="closeTmDrawer()" aria-label="Tutup menu"><span class="material-symbols-outlined">close</span></button>
+        <div class="tm-dr-brand"><img id="tm-dr-logo" alt=""/><div><div class="tm-dr-school">SMK MUHAMMADIYAH KENDARI</div><div class="tm-dr-sub">Portal Guru</div></div></div>
+        <div class="tm-dr-user" onclick="closeTmDrawer();openTeacherProfileModal()" style="cursor:pointer">
+          <div class="tm-avatar">${av ? av.innerHTML : ""}</div>
+          <div><div class="tm-dr-name">${escapeHtml(typeof teacherName !== "undefined" ? (teacherName||"") : "")}</div>${role ? `<span class="tm-dr-role">${role}</span>` : ""}</div>
+        </div>
+      </div>
+      <div class="tm-dr-body">${body}</div>
+      <div class="tm-dr-foot">
+        <button type="button" class="tm-link" onclick="closeTmDrawer();openViewSettings()"><span class="material-symbols-outlined">devices</span><span>Tampilan</span><small>${MODES[getMode()].label}</small></button>
+        <button type="button" class="tm-link danger" onclick="closeTmDrawer();teacherLogout()"><span class="material-symbols-outlined">logout</span><span>Keluar</span></button>
+      </div>`;
+    const src = document.querySelector("#screen-teacher > nav img");
+    const logo = $("tm-dr-logo");
+    if(src && logo) logo.src = src.src;
+    syncActive(curPage());
+  }
+  function openTmDrawer(){
+    if(!isMobileLayout()) return;
+    buildDrawer();
+    $("tm-drawer").classList.add("open"); $("tm-drawer").setAttribute("aria-hidden","false");
+    $("tm-scrim").classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+  function closeTmDrawer(){
+    const d = $("tm-drawer"), sc = $("tm-scrim");
+    if(d){ d.classList.remove("open"); d.setAttribute("aria-hidden","true"); }
+    if(sc) sc.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  function syncActive(id){
+    document.querySelectorAll("#tm-bottom-nav [data-tm]").forEach(b=>{
+      const on = b.dataset.tm === "__menu" ? !BAR_IDS.includes(id) : b.dataset.tm === id;
+      b.classList.toggle("on", on);
+    });
+    document.querySelectorAll("#tm-drawer [data-tm-dr]").forEach(b=> b.classList.toggle("on", b.dataset.tmDr === id));
+  }
+
+  /* ---------- kotak pengaturan ---------- */
+  function viewSettingsBody(){
+    const cur = getMode();
+    const opt = id=>`<button type="button" class="tm-opt ${cur===id?"on":""}" onclick="setViewMode('${id}')"><span class="material-symbols-outlined tm-opt-ico">${MODES[id].icon}</span><span class="tm-opt-txt"><b>${MODES[id].label}</b><small>${MODES[id].desc}</small></span><span class="material-symbols-outlined tm-opt-check">${cur===id?"check_circle":"radio_button_unchecked"}</span></button>`;
+    return `<p class="tm-note">Pilih bentuk tampilan aplikasi. Pengaturan ini tersimpan di perangkat ini saja, jadi tidak mengubah tampilan di perangkat guru lain.</p>` + ["auto","mobile","desktop"].map(opt).join("");
+  }
+  function openViewSettings(){ sbModal("view", "Tampilan Aplikasi", viewSettingsBody()); }
+  function setViewMode(m){
+    if(!MODES[m]) return;
+    try{ localStorage.setItem(KEY, m); }catch(e){}
+    applyViewMode();
+    setTimeout(applyViewMode, 350);   // hitung ulang setelah browser selesai mengubah lebar layar
+    buildBottomNav();
+    if($("sbm-view")) openViewSettings();
+    toast("Tampilan: "+MODES[m].label);
+  }
+
+  window.getViewMode = getMode; window.setViewMode = setViewMode; window.openViewSettings = openViewSettings;
+  window.openTmDrawer = openTmDrawer; window.closeTmDrawer = closeTmDrawer; window.applyViewMode = applyViewMode;
+
+  /* ---------- sambungkan ke navigasi yang sudah ada ---------- */
+  const hb = $("teacher-hamburger"); if(hb) hb.setAttribute("onclick", "openTmDrawer()");
+  const wrap = (name, after)=>{ const f = window[name]; if(typeof f !== "function") return; window[name] = function(){ const r = f.apply(this, arguments); try{ after.apply(this, arguments); }catch(e){ console.error(e); } return r; }; };
+  wrap("renderTeacherNav", ()=>{ buildBottomNav(); });
+  wrap("setActiveNav", id=>{ syncActive(id); });
+  wrap("closeTeacherMobileNav", ()=>{ closeTmDrawer(); });
+
+  let rt = null;
+  window.addEventListener("resize", ()=>{ clearTimeout(rt); rt = setTimeout(applyViewMode, 120); });
+  window.addEventListener("keydown", e=>{ if(e.key === "Escape") closeTmDrawer(); });
+  applyViewMode();
+  buildBottomNav();
+})();
 </script>
 </body>
 </html>

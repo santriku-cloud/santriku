@@ -7276,7 +7276,7 @@ function hafalanChartHtml(list){
   }).join("");
   return `
     <div class="flex items-center justify-between gap-2 mb-1">
-      <span class="text-[10px] font-semibold text-on-surface-variant">Tingkat hafalan: total ayat (tanpa hitung dobel), terendah ke tertinggi</span>
+      <span></span>
       <span class="text-[10px] text-on-surface-variant whitespace-nowrap">${data.length} santri • geser kiri/kanan</span>
     </div>
     <div id="hafalan-chart-scroll" class="overflow-x-auto custom-scrollbar cursor-grab select-none pb-1">
@@ -11629,6 +11629,15 @@ function pushClearBadge(){
 }
 document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState === "visible") pushClearBadge(); });
 window.addEventListener("load", pushClearBadge);
+/* Notifikasi saat aplikasi sedang terbuka: tampil langsung di dalam aplikasi */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.addEventListener("message", e=>{
+    const m = e.data;
+    if(!m || !m.sibestPush) return;
+    try{ toast((m.title || "SIBEST") + ": " + (m.body || ""), "ok"); }catch(_){}
+    try{ if(navigator.vibrate) navigator.vibrate(200); }catch(_){}
+  });
+}
 
 /* ---------- kartu di halaman Kontrol (semua guru) ---------- */
 function pushCardInner(){
@@ -11750,7 +11759,6 @@ async function sendPushTest(){
     const res = await fetch(pushBase()+"/api/push/notify", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ type:"tes" }) });
     const j = await res.json();
     if(!j.ok){ pushAdminStatus("<span class='text-error'>Gagal: "+escapeHtml(j.error||"kesalahan")+"</span>"); return; }
-    if(j.skipped === "cooldown"){ pushAdminStatus("Tunggu 1 menit sebelum mengirim tes lagi."); return; }
     pushAdminStatus("Terkirim ke <b>"+j.sent+"</b> dari "+j.devices+" perangkat"+(j.removed ? ", "+j.removed+" perangkat lama dihapus" : "")+(j.failed ? ", "+j.failed+" gagal" : "")+". Jika notifikasi tidak muncul, tutup aplikasinya dulu (notifikasi tidak ditampilkan saat aplikasi sedang terbuka).");
   }catch(e){
     pushAdminStatus("<span class='text-error'>Worker tidak bisa dihubungi.</span>");

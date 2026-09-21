@@ -4091,6 +4091,11 @@ async function notifyAllUnpaidEmail(year, monthIndex){
 
 function studentById(id){ return DB.students.find(s=>s.id===id); }
 function typeById(id){ return DB.violationTypes.find(t=>t.id===id); }
+/* Di portal siswa & orang tua, kalimat "Dari Laporan Santri" tidak ditampilkan (identitas pelapor rahasia). */
+function publicViolationNote(r){
+  const n = String((r && r.note) || "").replace(/^\s*Dari Laporan Santri(\s*\([^)]*\))?\s*:?\s*/i, "").trim();
+  return n;
+}
 
 function totalPoints(studentId){
   return DB.violationRecords.filter(r=>r.studentId===studentId)
@@ -9468,7 +9473,7 @@ function renderParentViolationList(){
       <div>
         <p class="text-sm font-medium">${t?t.name:"(dihapus)"}</p>
         ${t&&t.desc?`<p class="text-xs text-on-surface-variant">${t.desc}</p>`:""}
-        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)}${r.teacher?` • dicatat oleh ${r.teacher}`:""}${r.note?` • ${r.note}`:""}</p>
+        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)}${r.teacher?` • dicatat oleh ${r.teacher}`:""}${publicViolationNote(r)?` • ${publicViolationNote(r)}`:""}</p>
       </div>
       <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
     </div>`;
@@ -9703,7 +9708,7 @@ function renderStudentViolationList(){
       <div>
         <p class="text-sm font-medium">${t?t.name:"(dihapus)"}</p>
         ${t&&t.desc?`<p class="text-xs text-on-surface-variant">${t.desc}</p>`:""}
-        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)} • dicatat oleh ${r.teacher}${r.note?` • ${r.note}`:""}</p>
+        <p class="text-xs text-on-surface-variant">${formatDateTimeFull(r.date, r.time)} • dicatat oleh ${r.teacher}${publicViolationNote(r)?` • ${publicViolationNote(r)}`:""}</p>
       </div>
       <span class="text-xs font-semibold bg-error-container text-on-error-container px-3 py-1 rounded-full shrink-0">+${t?t.points:0} pts</span>
     </div>`;

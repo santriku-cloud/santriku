@@ -11421,36 +11421,105 @@ function visitNotifyText(v, status){
 /* =========================================================
    DASHBOARD TAMBAHAN, KONTEKS ABSENSI UNTUK AI, DAN PEMASANGAN HOOK
    ========================================================= */
-function dashboardExtraChartsHtml(){
-  // 1. Santri belum lunas per bulan (tahun ini sampai bulan ini)
-  const nowM = new Date().getMonth();
-  const l1 = [], v1 = [];
-  for(let i=0;i<=nowM;i++){ l1.push(MONTHS_ID[i].slice(0,3)); v1.push(unpaidCountForMonthIndex(CURRENT_YEAR, i)); }
-  // 2. Ayat hafalan unik per bulan (6 bulan)
-  const l2 = [], v2 = [];
-  for(let i=5;i>=0;i--){
-    const p = sbMonthPrefixAgo(i);
+/* ---- grafik dashboard: Hafalan & Kehadiran, bisa diatur per tanggal / per minggu / per bulan ---- */
+const DASH_CHART_MODES = {
+  day:   { label:"Per tanggal", sub:"14 hari terakhir" },
+  week:  { label:"Per minggu",  sub:"8 minggu terakhir" },
+  month: { label:"Per bulan",   sub:"6 bulan terakhir" }
+};
+let dashChartMode = (function(){
+  const def = { hafalan:"month", hadir:"month" };
+  try{
+    const j = JSON.parse(localStorage.getItem("sibestDashChartMode") || "{}");
+    return { hafalan: DASH_CHART_MODES[j.hafalan] ? j.hafalan : def.hafalan, hadir: DASH_CHART_MODES[j.hadir] ? j.hadir : def.hadir };
+  }catch(e){ return def; }
+})();
+function dashIso(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+// Daftar periode untuk sumbu grafik: tiap periode punya label dan fungsi match(tanggalISO)
+function dashChartPeriods(mode){
+  const out = [];
+  if(mode === "day"){
+    for(let i=13;i>=0;i--){
+      const iso = todayISO(-i), d = new Date(iso+"T00:00:00");
+      out.push({ label: d.getDate()+" "+MONTHS_ID[d.getMonth()], match: x=>x===iso });
+    }
+  } else if(mode === "week"){
+    const now = new Date(), dow = (now.getDay()+6)%7;   // Senin = 0
+    for(let i=7;i>=0;i--){
+      const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()-dow-7*i);
+      const end = new Date(start.getFullYear(), start.getMonth(), start.getDate()+6);
+      const a = dashIso(start), b = dashIso(end);
+      out.push({ label: start.getDate()+" "+MONTHS_ID[start.getMonth()], match: x=>x>=a && x<=b });
+    }
+  } else {
+    for(let i=5;i>=0;i--){
+      const pre = sbMonthPrefixAgo(i);
+      out.push({ label: MONTHS_ID[parseInt(pre.slice(5),10)-1], match: x=>x.startsWith(pre) });
+    }
+  }
+  return out;
+}
+function dashHafalanValues(periods){
+  return periods.map(p=>{
     const groups = {};
-    (DB.hafalanReports||[]).filter(r=>String(r.date).startsWith(p)).forEach(r=>{ (groups[hafalanReportNameKey(r)] = groups[hafalanReportNameKey(r)] || []).push(r); });
-    l2.push(MONTHS_ID[parseInt(p.slice(5),10)-1].slice(0,3));
-    v2.push(Object.values(groups).reduce((n,list)=>n+hafalanUniqueAyatTotal(list),0));
-  }
-  // 3. Persentase kehadiran per bulan (6 bulan)
-  const l3 = [], v3 = [];
-  for(let i=5;i>=0;i--){
-    const p = sbMonthPrefixAgo(i);
+    (DB.hafalanReports||[]).filter(r=>p.match(String(r.date||"").slice(0,10))).forEach(r=>{
+      const k = hafalanReportNameKey(r);
+      (groups[k] = groups[k] || []).push(r);
+    });
+    return Object.values(groups).reduce((n,list)=>n+hafalanUniqueAyatTotal(list),0);
+  });
+}
+function dashHadirValues(periods){
+  const dates = Object.keys(DB.attendance||{});
+  return periods.map(p=>{
     let hadir = 0, total = 0;
-    DB.students.forEach(s=>{ const st = attendanceMonthStats(s.id, p); hadir += st.H; total += st.days; });
-    l3.push(MONTHS_ID[parseInt(p.slice(5),10)-1].slice(0,3));
-    v3.push(total ? Math.round(hadir/total*100) : 0);
-  }
-  const card = (title, sub, inner)=>`<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5"><h4 class="font-display font-bold text-sm">${title}</h4><p class="text-[11px] text-on-surface-variant mb-3">${sub}</p>${inner}</div>`;
-  return `<div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-6">
-    ${card("Santri Belum Lunas", "Per bulan, tahun "+CURRENT_YEAR, sbBarsHtml(l1, v1, { color:"bg-error" }))}
-    ${card("Hafalan", "Total ayat (tanpa hitung dobel), 6 bulan terakhir", sbBarsHtml(l2, v2))}
-    ${card("Kehadiran", "Persentase hadir, 6 bulan terakhir", sbBarsHtml(l3, v3, { unit:"%" }))}
+    dates.filter(d=>p.match(d)).forEach(d=>{
+      DB.students.forEach(s=>{ const c = attendanceCodeFor(d, s.id); if(!c) return; total++; if(c === "H") hadir++; });
+    });
+    return total ? Math.round(hadir/total*100) : 0;
+  });
+}
+function dashboardExtraChartsHtml(){
+  const chartCard = (key, title, subPrefix, valuesFn, barOpts)=>{
+    const mode = dashChartMode[key] || "month";
+    const periods = dashChartPeriods(mode);
+    const labels = periods.map(p=>p.label);
+    const values = valuesFn(periods);
+    const opts = Object.assign({ colWidth: mode === "month" ? 38 : 46 }, barOpts || {});
+    const items = Object.entries(DASH_CHART_MODES).map(([m,o])=>
+      `<button type="button" onclick="setDashChartMode('${key}','${m}')" class="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm text-left hover:bg-surface-container ${mode===m?"font-semibold text-primary":""}">${o.label}${mode===m?`<span class="material-symbols-outlined text-[18px]">check</span>`:""}</button>`).join("");
+    return `<div class="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant p-5">
+      <div class="flex items-start justify-between gap-2">
+        <div><h4 class="font-display font-bold text-sm">${title}</h4><p class="text-[11px] text-on-surface-variant mb-3">${subPrefix}, ${DASH_CHART_MODES[mode].sub}</p></div>
+        <div class="relative shrink-0">
+          <button type="button" onclick="toggleDashChartMenu('${key}', event)" aria-label="Pengaturan grafik ${title}" class="w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+          <div id="dash-menu-${key}" class="dash-chart-menu hidden absolute right-0 top-full mt-1 z-20 min-w-[150px] py-1 bg-surface-container-lowest border border-outline-variant rounded-lg shadow-lg">${items}</div>
+        </div>
+      </div>
+      ${sbBarsHtml(labels, values, opts)}
+    </div>`;
+  };
+  return `<div id="dash-charts" class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-6">
+    ${chartCard("hafalan", "Hafalan", "Total ayat", dashHafalanValues)}
+    ${chartCard("hadir", "Kehadiran", "Persentase hadir", dashHadirValues, { unit:"%" })}
   </div>`;
 }
+function toggleDashChartMenu(key, ev){
+  if(ev) ev.stopPropagation();
+  document.querySelectorAll(".dash-chart-menu").forEach(m=>{ if(m.id !== "dash-menu-"+key) m.classList.add("hidden"); });
+  const m = document.getElementById("dash-menu-"+key);
+  if(m) m.classList.toggle("hidden");
+}
+function setDashChartMode(key, mode){
+  if(!DASH_CHART_MODES[mode]) return;
+  dashChartMode[key] = mode;
+  try{ localStorage.setItem("sibestDashChartMode", JSON.stringify(dashChartMode)); }catch(e){}
+  const g = document.getElementById("dash-charts");
+  if(g) g.outerHTML = dashboardExtraChartsHtml();
+}
+document.addEventListener("click", e=>{
+  if(!e.target.closest || !e.target.closest(".dash-chart-menu")) document.querySelectorAll(".dash-chart-menu").forEach(m=>m.classList.add("hidden"));
+});
 function renderDashboardExtras(){
   const el = document.getElementById("teacher-content");
   if(!el) return;

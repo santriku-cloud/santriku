@@ -5261,7 +5261,7 @@ function renderTeacherControl(){
       </div>
       <div id="ctrl-cat-akses" data-ctrl-cat="akses" class="hidden">
       ${ctrlGroup(
-        ctrlCard("Email Admin/Guru (Notifikasi Izin)", "mail", `
+        ctrlCard("Email Admin/Guru", "mail", `
           <div class="flex flex-col sm:flex-row gap-3">
             <input id="control-admin-email" type="email" value="${(DB.settings&&DB.settings.adminEmail)||""}" placeholder="admin@sekolah.sch.id" class="flex-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/>
             <button onclick="saveAdminEmail()" class="bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 px-4 hover:shadow-md transition-all">Simpan</button>

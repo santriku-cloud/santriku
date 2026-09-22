@@ -72,6 +72,11 @@ tailwind.config = {
   .ctrl-card > summary .ctrl-chevron { transition: transform .25s ease; }
   .ctrl-card[open] > summary .ctrl-chevron { transform: rotate(180deg); }
   .ctrl-card[open] > summary { border-bottom: 1px solid var(--tw-border-opacity,1) rgba(191,204,193,.6); }
+  /* Label grup di halaman Kontrol & sidebar: bisa diklik untuk buka/tutup daftar di bawahnya */
+  .ctrl-group > summary { list-style: none; }
+  .ctrl-group > summary::-webkit-details-marker, .ctrl-group > summary::marker { display: none; content: ""; }
+  .ctrl-group > summary .ctrl-group-chevron { transition: transform .25s ease; }
+  .ctrl-group[open] > summary .ctrl-group-chevron { transform: rotate(180deg); }
   .material-symbols-outlined.filled { font-variation-settings: 'FILL' 1; }
   body { font-family: 'Hanken Grotesk', sans-serif; }
   h1,h2,h3,h4,.font-display { font-family: 'Manrope', sans-serif; }
@@ -5181,14 +5186,17 @@ function ctrlCard(title, icon, inner, open){
       <div class="px-4 pb-4 pt-1">${inner}</div>
     </details>`;
 }
-// Bungkus beberapa ctrlCard() dalam satu wadah bergaris tipis dengan label
-// kelompok di atasnya, seperti daftar Pengaturan pada aplikasi modern.
-function ctrlGroup(label, itemsHtml){
+// Bungkus beberapa ctrlCard() dalam satu wadah bergaris tipis, dengan label
+// kelompok yang bisa DIKLIK untuk membuka/menutup seluruh daftar di bawahnya.
+function ctrlGroup(label, itemsHtml, open){
   return `
-    <div class="mb-5 last:mb-0">
-      <div class="px-1 mb-2 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant/70">${label}</div>
-      <div class="bg-surface-container-lowest rounded-2xl border border-outline-variant/70 shadow-sm overflow-hidden divide-y divide-outline-variant/60">${itemsHtml}</div>
-    </div>`;
+    <details ${open?"open":""} class="ctrl-group mb-2 last:mb-0">
+      <summary class="cursor-pointer select-none flex items-center justify-between gap-2 px-1 py-2.5 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant/70 hover:text-on-surface transition-colors">
+        <span>${label}</span>
+        <span class="ctrl-group-chevron material-symbols-outlined text-[16px]">expand_more</span>
+      </summary>
+      <div class="mb-3 bg-surface-container-lowest rounded-2xl border border-outline-variant/70 shadow-sm overflow-hidden divide-y divide-outline-variant/60">${itemsHtml}</div>
+    </details>`;
 }
 function renderTeacherControl(){
   const el = document.getElementById("teacher-content");
@@ -9234,13 +9242,26 @@ const TEACHER_NAV_GROUPS = [
   ["Kesantrian", ["log-violation","violation-types","reports","izin","visits"]],
   ["Sistem", ["laporan","control","ai-agency"]]
 ];
+// Grup mana saja yang sedang terbuka di sidebar (diisi otomatis pertama kali
+// dibuka: hanya grup berisi halaman aktif yang tampil, sisanya tertutup).
+let teacherNavOpenGroups = null;
+function toggleTeacherNavGroup(label){
+  if(teacherNavOpenGroups.has(label)) teacherNavOpenGroups.delete(label);
+  else teacherNavOpenGroups.add(label);
+  renderTeacherNav();
+  setActiveNav(currentTeacherPage);
+}
 function renderTeacherNav(){
   const linkClass = "nav-link flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-white/55 hover:text-white hover:bg-white/[0.07] transition-colors";
-  const groupLabelClass = "px-3 pt-4 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-white/30 first:pt-0.5";
+  const groupBtnClass = "w-full flex items-center justify-between gap-2 px-3 py-2 mt-2 first:mt-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider text-white/35 hover:text-white/60 hover:bg-white/[0.05] transition-colors";
   const mobileLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors";
   const nav = document.getElementById("teacher-nav");
   const items = (typeof visibleTeacherNavItems === "function" ? visibleTeacherNavItems() : TEACHER_NAV_ITEMS);
   const byId = Object.fromEntries(items.map(it => [it.id, it]));
+  if(teacherNavOpenGroups === null){
+    const activeGroup = TEACHER_NAV_GROUPS.find(([,ids]) => ids.includes(currentTeacherPage));
+    teacherNavOpenGroups = new Set([activeGroup ? activeGroup[0] : TEACHER_NAV_GROUPS[0][0]]);
+  }
   const used = new Set();
   const linkHtml = it => `
     <li>
@@ -9253,7 +9274,15 @@ function renderTeacherNav(){
     const list = ids.map(id => byId[id]).filter(Boolean);
     list.forEach(it => used.add(it.id));
     if(!list.length) return "";
-    return `<li class="${groupLabelClass}">${label}</li>` + list.map(linkHtml).join("");
+    const isOpen = teacherNavOpenGroups.has(label);
+    return `
+      <li>
+        <button type="button" onclick="toggleTeacherNavGroup('${label}')" class="${groupBtnClass}">
+          <span>${label}</span>
+          <span class="material-symbols-outlined text-[16px] transition-transform" style="transform:rotate(${isOpen?180:0}deg)">expand_more</span>
+        </button>
+      </li>
+      <li class="${isOpen?"":"hidden"}"><ul class="space-y-1">${list.map(linkHtml).join("")}</ul></li>`;
   }).join("") + items.filter(it => !used.has(it.id)).map(linkHtml).join("");
   const navMobile = document.getElementById("teacher-nav-mobile");
   navMobile.innerHTML = items.map(it => `
@@ -9295,6 +9324,10 @@ function setActiveNav(id){
 function teacherGo(page){
   currentTeacherPage = page;
   if(page !== "log-violation") pendingLogReportId = null;
+  if(teacherNavOpenGroups){
+    const g = TEACHER_NAV_GROUPS.find(([,ids]) => ids.includes(page));
+    if(g && !teacherNavOpenGroups.has(g[0])){ teacherNavOpenGroups.add(g[0]); renderTeacherNav(); }
+  }
   setActiveNav(page);
   closeTeacherMobileNav();
   const titles = { dashboard:"Dashboard", students:"Data Siswa", payments:"Pembayaran Bulanan", expenses:"Uang Keluar", "violation-types":"Jenis Pelanggaran", "log-violation":"Catat Pelanggaran", reports:"Laporan Santri", visits:"Jadwal Kunjungan", izin:"Perizinan Santri", laporan:"Laporan", control:"Kontrol", attendance:"Absensi", announcements:"Pengumuman" };

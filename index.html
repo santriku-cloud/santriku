@@ -206,16 +206,21 @@ body.ui-wide .tm-bottom-nav{left:50%;right:auto;width:640px;max-width:100%;trans
 
 /* pilihan di kotak "Tampilan Aplikasi" */
 .tm-note{font-size:12.5px;color:#3f4d42;margin:0 0 14px}
-.tm-opt{display:flex;align-items:center;gap:14px;width:100%;padding:14px;margin-bottom:10px;border:1.5px solid #bfccc1;border-radius:16px;background:#fff;text-align:left;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}
+.tm-opt{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;margin-bottom:8px;border:1px solid #e0e7e2;border-radius:12px;background:#fff;text-align:left;cursor:pointer;font-family:inherit;transition:border-color .15s,background .15s}
 .tm-opt:hover{border-color:#2e9254}
 .tm-opt.on{border-color:#0f6b3c;background:#eef8f1;box-shadow:0 0 0 3px rgba(15,107,60,.10)}
-.tm-opt-ico{width:44px;height:44px;border-radius:12px;background:#e6f1e9;color:#0f6b3c;display:flex;align-items:center;justify-content:center;font-size:24px !important;flex-shrink:0}
+.tm-opt-ico{width:32px;height:32px;border-radius:9px;background:#e6f1e9;color:#0f6b3c;display:flex;align-items:center;justify-content:center;font-size:18px !important;flex-shrink:0}
 .tm-opt.on .tm-opt-ico{background:#0f6b3c;color:#fff}
 .tm-opt-txt{flex:1;min-width:0}
-.tm-opt-txt b{display:block;font-size:14.5px;color:#151f17}
-.tm-opt-txt small{display:block;margin-top:2px;font-size:12px;line-height:1.35;color:#3f4d42}
-.tm-opt-check{color:#bfccc1;font-size:24px !important}
+.tm-opt-txt b{display:block;font-size:13px;color:#151f17}
+.tm-opt-txt small{display:block;margin-top:1px;font-size:11px;line-height:1.3;color:#3f4d42}
+.tm-opt-check{color:#bfccc1;font-size:20px !important}
 .tm-opt.on .tm-opt-check{color:#0f6b3c;font-variation-settings:'FILL' 1}
+/* ===== Sidebar guru: modern, ramping ===== */
+#screen-teacher nav.hidden.md\:flex{background:linear-gradient(180deg,#0c3d24,#0a2e1c)}
+.nav-link{position:relative}
+.nav-link-active{background:rgba(255,255,255,.08)}
+.nav-link-active::before{content:"";position:absolute;left:-8px;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:3px;background:#6fe3a0}
 </style>
 </head>
 <body class="bg-background text-on-surface antialiased min-h-screen">
@@ -9206,13 +9211,14 @@ function renderTeacherAIAgency(){
 }
 
 function renderTeacherNav(){
-  const linkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-outline hover:text-white hover:bg-white/10 transition-colors";
+  const linkClass = "nav-link flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium text-white/55 hover:text-white hover:bg-white/[0.06] transition-colors";
   const mobileLinkClass = "flex items-center gap-3 px-4 py-3 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors";
   const nav = document.getElementById("teacher-nav");
   nav.innerHTML = (typeof visibleTeacherNavItems === "function" ? visibleTeacherNavItems() : TEACHER_NAV_ITEMS).map(it => `
     <li>
       <a href="javascript:void(0)" onclick="teacherGo('${it.id}')" data-nav="${it.id}" class="${linkClass}">
-        <span class="material-symbols-outlined">${it.icon}</span><span>${it.label}</span>
+        <span class="nav-ico shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-white/[0.05]"><span class="material-symbols-outlined text-[19px]">${it.icon}</span></span>
+        <span class="truncate">${it.label}</span>
       </a>
     </li>`).join("");
   const navMobile = document.getElementById("teacher-nav-mobile");
@@ -9243,8 +9249,8 @@ function closeTeacherMobileNav(){
 
 function setActiveNav(id){
   document.querySelectorAll("#teacher-nav a").forEach(a=>{
-    if (a.dataset.nav === id) { a.classList.add("bg-primary-container","text-white"); a.classList.remove("text-outline"); }
-    else { a.classList.remove("bg-primary-container","text-white"); a.classList.add("text-outline"); }
+    if (a.dataset.nav === id) { a.classList.add("nav-link-active","text-white"); a.classList.remove("text-white/55"); const ic=a.querySelector(".nav-ico"); if(ic) ic.classList.add("bg-white/15"); }
+    else { a.classList.remove("nav-link-active","text-white"); a.classList.add("text-white/55"); const ic=a.querySelector(".nav-ico"); if(ic) ic.classList.remove("bg-white/15"); }
   });
   document.querySelectorAll("#teacher-nav-mobile a").forEach(a=>{
     if (a.dataset.navMobile === id) { a.classList.add("bg-primary-fixed","text-primary","font-semibold"); }

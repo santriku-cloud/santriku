@@ -3842,7 +3842,9 @@ async function updateMonthlyFee(studentId, value){
   const v = parseInt(value, 10);
   s.monthlyFee = (isNaN(v) || v < 0) ? 0 : v;
   await saveDB();
-  renderTeacherPayments();
+  // Sama seperti nilai hafalan: jangan gambar ulang seluruh tabel selama admin masih
+  // aktif mengisi kotak biaya santri lain, supaya isiannya tidak tiba-tiba terhapus/tertutup.
+  if(!isUserTyping()) renderTeacherPayments();
 }
 
 async function setPaymentAmountPaid(studentId, mKey, amount){
@@ -10466,7 +10468,9 @@ async function setTeacherRole(slug, role){
     toast(acc.name+" sekarang berperan sebagai "+(role==="admin"?"Admin":"Guru")+".");
     await logManual("ubah","akun","Peran "+acc.name+": "+(role==="admin"?"Admin":"Guru"));
     if(slug === teacherSlug){ teacherRole = role; updateRoleBadge(); renderTeacherNav(); setActiveNav(currentTeacherPage); }
-    renderTeacherAccountsTable();
+    // Sama seperti nilai hafalan: jangan gambar ulang seluruh tabel akun selama admin
+    // masih aktif memilih peran akun lain, supaya pilihannya tidak tiba-tiba tertutup.
+    if(!isUserTyping()) renderTeacherAccountsTable();
   }catch(e){ console.error(e); toast("Gagal mengubah peran.", "error"); }
 }
 function renderAdminOnlyPage(title){
@@ -11084,7 +11088,14 @@ async function setHafalanQuality(id, q){
     if(q){ r.quality = q; r.gradedBy = teacherName || ""; r.gradedAt = new Date().toISOString(); }
     else { delete r.quality; delete r.gradedBy; delete r.gradedAt; }
   });
-  if(typeof refreshHafalanSection === "function") refreshHafalanSection();
+  // Proses simpan di atas butuh waktu (round-trip ke server). Selama menunggu, guru
+  // sering sudah pindah dan mulai mengisi kotak nilai baris lain (baris ke-2/ke-3).
+  // Kalau kita tetap menggambar ulang SELURUH tabel di sini, kotak <select> yang sedang
+  // ia gunakan ikut dibongkar-pasang ulang, sehingga terlihat seperti "keluar sendiri"
+  // atau kehilangan pilihan yang baru saja dipilih. Jadi lewati gambar ulang selama
+  // guru masih aktif di sebuah input/select (mis. sedang memilih nilai baris lain) —
+  // sama seperti pengaman yang sudah dipakai untuk sinkronisasi realtime (isUserTyping()).
+  if(typeof refreshHafalanSection === "function" && !isUserTyping()) refreshHafalanSection();
 }
 
 /* =========================================================

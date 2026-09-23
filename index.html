@@ -7744,7 +7744,7 @@ async function confirmHafalanExportDownload(){
   try{
     if(document.fonts && document.fonts.ready){ await document.fonts.ready; }
     await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    const canvas = await html2canvas(holder.firstElementChild, { scale:2, backgroundColor:"#ffffff", useCORS:true });
+    const canvas = await html2canvas(holder.firstElementChild, { scale:3, backgroundColor:"#ffffff", useCORS:true });
     const a = document.createElement("a");
     a.download = `Laporan_Hafalan_${range.type}_${todayISO()}.png`;
     a.href = canvas.toDataURL("image/png");

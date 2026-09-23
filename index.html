@@ -7655,19 +7655,25 @@ function hafalanExportBuildCaptureHtml(range){
 
   const ayatOf = p => hafalanUniqueAyatTotal(p.reports);
   const ayatValuesDesc = people.map(ayatOf).sort((a,b)=> b-a);
+  const maxAyat = ayatValuesDesc[0] || 0;
 
   const chart1Data = people
     .map(p=>{ const ayat = ayatOf(p); return { name: hafalanNicknameFor(p.name), value: ayat, color: hafalanRankColor(ayat, ayatValuesDesc) }; })
     .sort((a,b)=> a.value-b.value || a.name.localeCompare(b.name));
 
+  /* Kualitas = gabungan nilai bacaan (Lancar/Cukup/Ulang) dan jumlah ayat (relatif terhadap
+     santri dengan ayat terbanyak). Jadi setor banyak kali tapi tidak lancar atau ayatnya
+     sedikit tidak akan mendapat nilai kualitas tinggi. */
   const rows = people.map(p=>{
     const jumlah = p.reports.length;
     const ayat = ayatOf(p);
     const q = hafalanExportQuality(p.reports);
-    return { name:p.name, jumlah, ayat, ayatColor: hafalanRankColor(ayat, ayatValuesDesc), counts:q.counts, pct:q.pct };
+    const ayatPct = maxAyat ? Math.round(ayat/maxAyat*100) : 0;
+    const combinedPct = q.pct == null ? null : Math.round((q.pct + ayatPct)/2);
+    return { name:p.name, jumlah, ayat, ayatColor: hafalanRankColor(ayat, ayatValuesDesc), counts:q.counts, pct:combinedPct };
   }).sort((a,b)=> b.jumlah-a.jumlah || a.name.localeCompare(b.name));
 
-  const composite = rows.map(r=>({ name: hafalanNicknameFor(r.name), score: r.jumlah + (r.pct||0) }));
+  const composite = rows.map(r=>({ name: hafalanNicknameFor(r.name), score: r.pct || 0 }));
   const totalComposite = composite.reduce((s,c)=>s+c.score,0) || 1;
   const chart2Values = composite.map(c=> Math.round(c.score/totalComposite*100)).sort((a,b)=> b-a);
   const chart2Data = composite
@@ -7709,9 +7715,9 @@ function hafalanExportBuildCaptureHtml(range){
         </tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
-      <p class="text-[9px] text-on-surface-variant mt-2">Jumlah Ayat: warna berdasarkan peringkat (emas = tertinggi, lalu hijau, biru, merah = terendah). Kualitas: <span style="color:#ef4444">merah &lt;40</span> · <span style="color:#2563eb">biru 40–69</span> · <span style="color:#16a34a">hijau 70–89</span> · <span style="color:#d4af37">emas ≥90</span></p>
+      <p class="text-[9px] text-on-surface-variant mt-2">Jumlah Ayat: warna berdasarkan peringkat (emas = tertinggi, lalu hijau, biru, merah = terendah). Kualitas: gabungan nilai bacaan &amp; jumlah ayat — <span style="color:#ef4444">merah &lt;40</span> · <span style="color:#2563eb">biru 40–69</span> · <span style="color:#16a34a">hijau 70–89</span> · <span style="color:#d4af37">emas ≥90</span></p>
 
-      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Bobot &amp; Kualitas setoran</h3>
+      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Bobot &amp; Kualitas Hafalan</h3>
       ${hafalanExportBarChartHtml(chart2Data, { nameAbove:true, suffix:"%", containerWidth: contentWidth })}
       <p class="text-[9px] text-on-surface-variant mt-2">Warna balok mengikuti peringkat: <span style="color:#d4af37">emas = tertinggi</span> · <span style="color:#16a34a">hijau</span> · <span style="color:#2563eb">biru</span> · <span style="color:#ef4444">merah = terendah</span></p>
     </div>`;

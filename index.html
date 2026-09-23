@@ -334,6 +334,10 @@ body.ui-wide .tm-bottom-nav{left:50%;right:auto;width:640px;max-width:100%;trans
         <textarea id="edit-student-name" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
       </div>
       <div>
+        <label class="text-xs font-semibold text-on-surface-variant">Nama Panggilan <span class="font-normal">(opsional)</span></label>
+        <textarea id="edit-student-nickname" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
+      </div>
+      <div>
         <label class="text-xs font-semibold text-on-surface-variant">NIK</label>
         <textarea id="edit-student-nik" rows="1" class="autogrow-input w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none" oninput="autoGrow(this)"></textarea>
       </div>
@@ -6470,6 +6474,7 @@ function openEditStudentModal(id){
   if(!s) return;
   document.getElementById("edit-student-id").value = s.id;
   document.getElementById("edit-student-name").value = s.name || "";
+  document.getElementById("edit-student-nickname").value = s.nickname || "";
   document.getElementById("edit-student-nik").value = s.nik || "";
   document.getElementById("edit-student-code").value = s.code || "";
   document.getElementById("edit-student-kelas").innerHTML = classOptionsHtml(s.kelas || "");
@@ -6482,7 +6487,7 @@ function openEditStudentModal(id){
   // Panggil autoGrow SETELAH modal ditampilkan, supaya tinggi textarea
   // dihitung dari ukuran sebenarnya (bukan 0 saat masih tersembunyi).
   requestAnimationFrame(()=>{
-    ["edit-student-name","edit-student-nik","edit-student-code"].forEach(fid=>{
+    ["edit-student-name","edit-student-nickname","edit-student-nik","edit-student-code"].forEach(fid=>{
       const el = document.getElementById(fid);
       if(el) autoGrow(el);
     });
@@ -6500,6 +6505,7 @@ async function saveEditStudent(){
   const s = studentById(id);
   if(!s) return;
   const name = document.getElementById("edit-student-name").value.trim();
+  const nickname = document.getElementById("edit-student-nickname").value.trim();
   const nik = document.getElementById("edit-student-nik").value.trim();
   const code = document.getElementById("edit-student-code").value.trim();
   const kelas = document.getElementById("edit-student-kelas").value.trim();
@@ -6520,6 +6526,7 @@ async function saveEditStudent(){
     return;
   }
   s.name = name;
+  s.nickname = nickname;
   s.nik = nik;
   s.code = code;
   s.kelas = kelas;

@@ -450,6 +450,33 @@ body.ui-wide .tm-bottom-nav{left:50%;right:auto;width:640px;max-width:100%;trans
   </div>
 </div>
 
+<!-- ============ UNDUH GRAFIK LAPORAN HAFALAN (PILIH PERIODE) ============ -->
+<div id="hafalan-export-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeHafalanExportModal()">
+  <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
+    <button onclick="closeHafalanExportModal()" class="absolute -top-3 -right-3 bg-white rounded-full shadow-lg p-1.5 z-10 hover:bg-surface-container">
+      <span class="material-symbols-outlined text-on-surface block">close</span>
+    </button>
+    <h4 class="font-display font-bold text-lg mb-1">Unduh Laporan Hafalan</h4>
+    <p class="text-xs text-on-surface-variant mb-4">Pilih periode data yang mau diunduh sebagai gambar.</p>
+    <div id="hafalan-export-range-options" class="space-y-2">
+      <button type="button" onclick="selectHafalanExportRange('all')" data-range="all" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-semibold text-left transition-colors"><span class="material-symbols-outlined text-[18px]">radio_button_unchecked</span>Semua</button>
+      <button type="button" onclick="selectHafalanExportRange('month')" data-range="month" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-semibold text-left transition-colors"><span class="material-symbols-outlined text-[18px]">radio_button_unchecked</span>Bulan Ini</button>
+      <button type="button" onclick="selectHafalanExportRange('range')" data-range="range" class="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-sm font-semibold text-left transition-colors"><span class="material-symbols-outlined text-[18px]">radio_button_unchecked</span>Rentang Waktu</button>
+    </div>
+    <div id="hafalan-export-range-dates" class="hidden grid grid-cols-2 gap-3 mt-3">
+      <div><label class="text-xs font-semibold text-on-surface-variant">Dari tanggal</label>
+        <input id="hafalan-export-date-from" type="date" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+      <div><label class="text-xs font-semibold text-on-surface-variant">Sampai tanggal</label>
+        <input id="hafalan-export-date-to" type="date" class="w-full mt-1 px-3 py-2 rounded-lg border border-outline-variant text-sm focus:border-primary outline-none"/></div>
+    </div>
+    <p id="hafalan-export-error" class="hidden text-error text-xs mt-3"></p>
+    <div class="flex gap-3 mt-5">
+      <button onclick="closeHafalanExportModal()" class="flex-1 bg-surface-container text-on-surface rounded-lg text-sm font-semibold py-2.5 border border-outline-variant">Batal</button>
+      <button id="hafalan-export-confirm-btn" onclick="confirmHafalanExportDownload()" class="flex-1 bg-primary text-on-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow-md transition-all flex items-center justify-center gap-1">Unduh</button>
+    </div>
+  </div>
+</div>
+
 <!-- ============ EDIT LAPORAN PELANGGARAN MODAL ============ -->
 <div id="edit-violation-report-modal" class="hidden fixed inset-0 bg-black/60 z-[998] items-center justify-center px-4" onclick="if(event.target===this) closeEditViolationReportModal()">
   <div class="relative w-full max-w-sm fade-in bg-surface-container-lowest rounded-2xl p-6">
@@ -7391,7 +7418,9 @@ function hafalanChartHtml(list){
   }).join("");
   return `
     <div class="flex items-center justify-between gap-2 mb-1">
-      <span></span>
+      <button type="button" onclick="openHafalanExportModal()" title="Unduh grafik sebagai gambar" class="w-6 h-6 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container hover:text-primary transition-colors shrink-0">
+        <span class="material-symbols-outlined" style="font-size:16px">download</span>
+      </button>
       <span class="text-[10px] text-on-surface-variant whitespace-nowrap">${data.length} santri • geser kiri/kanan</span>
     </div>
     <div id="hafalan-chart-scroll" class="overflow-x-auto custom-scrollbar cursor-grab select-none pb-1">
@@ -7408,6 +7437,241 @@ function enableHafalanChartDrag(){
   el.addEventListener("mouseup", stop);
   el.addEventListener("mouseleave", stop);
   el.addEventListener("mousemove", e=>{ if(!down) return; e.preventDefault(); el.scrollLeft = startLeft - (e.pageX - startX); });
+}
+
+/* ===================================================================
+   UNDUH LAPORAN HAFALAN SEBAGAI GAMBAR (grafik + tabel + grafik kualitas)
+   =================================================================== */
+let hafalanExportRangeType = "all"; // all | month | range
+
+function openHafalanExportModal(){
+  hafalanExportRangeType = "all";
+  const from = document.getElementById("hafalan-export-date-from");
+  const to = document.getElementById("hafalan-export-date-to");
+  if(from) from.value = "";
+  if(to) to.value = "";
+  const err = document.getElementById("hafalan-export-error");
+  if(err) err.classList.add("hidden");
+  renderHafalanExportRangeButtons();
+  const m = document.getElementById("hafalan-export-modal");
+  if(m) m.classList.remove("hidden");
+}
+function closeHafalanExportModal(){
+  const m = document.getElementById("hafalan-export-modal");
+  if(m) m.classList.add("hidden");
+}
+function selectHafalanExportRange(type){
+  hafalanExportRangeType = type;
+  renderHafalanExportRangeButtons();
+}
+function renderHafalanExportRangeButtons(){
+  document.querySelectorAll("#hafalan-export-range-options [data-range]").forEach(btn=>{
+    const on = btn.dataset.range === hafalanExportRangeType;
+    btn.classList.toggle("border-primary", on);
+    btn.classList.toggle("bg-primary/10", on);
+    btn.classList.toggle("text-primary", on);
+    btn.classList.toggle("border-outline-variant", !on);
+    btn.classList.toggle("text-on-surface", !on);
+    const icon = btn.querySelector(".material-symbols-outlined");
+    if(icon) icon.textContent = on ? "radio_button_checked" : "radio_button_unchecked";
+  });
+  const dates = document.getElementById("hafalan-export-range-dates");
+  if(dates) dates.classList.toggle("hidden", hafalanExportRangeType !== "range");
+}
+
+/* true jika tanggal (ISO yyyy-mm-dd) termasuk dalam periode yang dipilih */
+function hafalanExportDateInRange(dateStr, range){
+  if(range.type === "all") return true;
+  if(!dateStr) return false;
+  if(range.type === "month") return dateStr.slice(0,7) === todayISO().slice(0,7);
+  if(range.type === "range"){
+    if(range.from && dateStr < range.from) return false;
+    if(range.to && dateStr > range.to) return false;
+    return true;
+  }
+  return true;
+}
+function hafalanExportRangeLabel(range){
+  if(range.type === "all") return "Semua Data";
+  if(range.type === "month"){
+    const d = new Date(todayISO()+"T00:00:00");
+    return "Bulan Ini — " + d.toLocaleDateString("id-ID", { month:"long", year:"numeric" });
+  }
+  const f = range.from ? formatDate(range.from) : "awal";
+  const t = range.to ? formatDate(range.to) : "sekarang";
+  return `Rentang ${f} s/d ${t}`;
+}
+
+/* Kumpulkan data per santri (setoran + total ayat) sesuai periode yang dipilih,
+   mengikuti nama santri yang sedang dipilih di kotak Cari (jika ada). */
+function hafalanExportComputeData(range){
+  const people = new Map();
+  const ensure = (k, name)=>{ if(k && !people.has(k)) people.set(k, { name, reports:[] }); return people.get(k); };
+  if(hafalanNameSelected.length){
+    hafalanNameSelected.forEach(x=>ensure(x.key, x.name));
+  } else {
+    (DB.students||[]).forEach(st=>ensure(hafalanNameKey(st.name), st.name));
+  }
+  (DB.hafalanReports||[]).filter(r=>hafalanExportDateInRange(r.date, range)).forEach(r=>{
+    const k = hafalanReportNameKey(r);
+    const p = ensure(k, hafalanReportDisplayName(r));
+    if(p) p.reports.push(r);
+  });
+  return [...people.values()];
+}
+
+/* Nilai kualitas 0-100: Lancar=100, Cukup=50, Perlu diulang=0, dirata-ratakan
+   dari setoran yang sudah dinilai saja. null jika belum ada yang dinilai. */
+const HAFALAN_QUALITY_WEIGHT = { lancar:100, cukup:50, ulang:0 };
+function hafalanExportQuality(reports){
+  const counts = { lancar:0, cukup:0, ulang:0, belum:0 };
+  reports.forEach(r=>{ counts[r.quality && counts[r.quality] !== undefined ? r.quality : "belum"]++; });
+  const graded = counts.lancar + counts.cukup + counts.ulang;
+  const pct = graded ? Math.round((counts.lancar*100 + counts.cukup*50 + counts.ulang*0) / graded) : null;
+  return { counts, pct };
+}
+function hafalanExportQualitySummary(counts){
+  const parts = [];
+  if(counts.lancar) parts.push(`${counts.lancar} Lancar`);
+  if(counts.cukup) parts.push(`${counts.cukup} Cukup`);
+  if(counts.ulang) parts.push(`${counts.ulang} Perlu diulang`);
+  if(counts.belum) parts.push(`${counts.belum} Belum dinilai`);
+  return parts.length ? parts.join(", ") : "-";
+}
+/* Lingkaran persentase kualitas (SVG ring), warna biru sesuai permintaan. */
+function hafalanExportQualityRing(pct){
+  const p = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+  const r = 20, c = Math.round(2*Math.PI*r);
+  const off = Math.round(c - (p/100)*c);
+  return `<div class="relative flex items-center justify-center shrink-0" style="width:52px;height:52px">
+    <svg width="52" height="52" viewBox="0 0 52 52" style="transform:rotate(-90deg)">
+      <circle cx="26" cy="26" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="6"/>
+      <circle cx="26" cy="26" r="${r}" fill="none" stroke="#2563eb" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
+    </svg>
+    <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold" style="color:#2563eb">${pct == null ? "-" : pct}</span>
+  </div>`;
+}
+
+/* Grafik batang (tanpa scroll, untuk gambar yang diunduh) — sama seperti hafalanChartHtml
+   tapi mengambil seluruh lebar supaya tidak terpotong saat difoto html2canvas. */
+function hafalanExportBarChartHtml(data, opts){
+  if(!data.length) return `<p class="text-xs text-on-surface-variant">Tidak ada data pada periode ini.</p>`;
+  const max = Math.max(1, ...data.map(d=>d.value));
+  const H = 84;
+  const barColor = opts.barColor || "bg-primary";
+  const cols = data.map(d=>{
+    const h = d.value ? Math.max(4, Math.round(d.value/max*H)) : 2;
+    const nameAbove = opts.nameAbove;
+    return `<div class="flex flex-col items-center shrink-0" style="width:34px">
+      ${nameAbove ? `
+      <div class="flex flex-col items-center justify-end" style="height:96px">
+        <div style="writing-mode:vertical-rl;transform:rotate(180deg);height:66px;overflow:hidden;white-space:nowrap" class="text-[9px] text-on-surface-variant">${escapeHtml(d.name)}</div>
+        <span class="text-[10px] font-bold text-primary mt-0.5">${d.value}${opts.suffix||""}</span>
+      </div>
+      <div class="w-5 rounded-t ${d.value ? barColor : "bg-outline-variant"}" style="height:${h}px"></div>` : `
+      <div class="flex flex-col items-center justify-end" style="height:${H+16}px">
+        <span class="text-[10px] font-semibold text-on-surface-variant mb-0.5">${d.value}${opts.suffix||""}</span>
+        <div class="w-5 rounded-t ${d.value ? barColor : "bg-outline-variant"}" style="height:${h}px"></div>
+      </div>
+      <div class="mt-1 text-[9px] text-on-surface-variant" style="writing-mode:vertical-rl;transform:rotate(180deg);height:76px;overflow:hidden;white-space:nowrap">${escapeHtml(d.name)}</div>`}
+    </div>`;
+  }).join("");
+  return `<div class="flex items-end gap-1 border-b border-outline-variant" style="width:max-content">${cols}</div>`;
+}
+
+/* Susun seluruh konten yang akan difoto: judul, grafik total setoran,
+   tabel per santri (jumlah setoran, nilai, kualitas), lalu grafik kontribusi. */
+function hafalanExportBuildCaptureHtml(range){
+  const people = hafalanExportComputeData(range);
+
+  const chart1Data = people
+    .map(p=>({ name:p.name, value: hafalanUniqueAyatTotal(p.reports) }))
+    .sort((a,b)=> a.value-b.value || a.name.localeCompare(b.name));
+
+  const rows = people.map(p=>{
+    const jumlah = p.reports.length;
+    const q = hafalanExportQuality(p.reports);
+    return { name:p.name, jumlah, counts:q.counts, pct:q.pct };
+  }).sort((a,b)=> b.jumlah-a.jumlah || a.name.localeCompare(b.name));
+
+  const composite = rows.map(r=>({ name:r.name, score: r.jumlah + (r.pct||0) }));
+  const totalComposite = composite.reduce((s,c)=>s+c.score,0) || 1;
+  const chart2Data = composite
+    .map(c=>({ name:c.name, value: Math.round(c.score/totalComposite*100) }))
+    .sort((a,b)=> a.value-b.value || a.name.localeCompare(b.name));
+
+  const tableRows = rows.map(r=>`
+    <tr class="border-t border-outline-variant">
+      <td class="p-2.5 font-semibold whitespace-nowrap">${escapeHtml(r.name)}</td>
+      <td class="p-2.5 text-center whitespace-nowrap">${r.jumlah}x</td>
+      <td class="p-2.5 whitespace-nowrap">${hafalanExportQualitySummary(r.counts)}</td>
+      <td class="p-2.5"><div class="flex justify-center">${hafalanExportQualityRing(r.pct)}</div></td>
+    </tr>`).join("") || `<tr><td colspan="4" class="p-4 text-center text-on-surface-variant">Tidak ada data.</td></tr>`;
+
+  const schoolName = (DB.settings && DB.settings.schoolName) || "SMK MUHAMMADIYAH KENDARI";
+  const generatedAt = new Date().toLocaleString("id-ID", { dateStyle:"long", timeStyle:"short" });
+
+  return `
+    <div style="width:max-content;min-width:820px" class="bg-white p-6 font-body text-on-surface">
+      <div class="mb-4">
+        <h2 class="font-display font-bold text-lg">${escapeHtml(schoolName)}</h2>
+        <p class="text-sm font-semibold text-on-surface-variant">Laporan Hafalan — ${escapeHtml(hafalanExportRangeLabel(range))}</p>
+        <p class="text-[10px] text-on-surface-variant">Diunduh: ${generatedAt}</p>
+      </div>
+
+      <h3 class="text-xs font-bold text-on-surface-variant mb-2 uppercase tracking-wide">Total Ayat Setoran per Santri</h3>
+      ${hafalanExportBarChartHtml(chart1Data, { barColor:"bg-primary" })}
+
+      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Rincian per Santri</h3>
+      <table class="text-xs" style="width:100%;border-collapse:collapse">
+        <thead class="bg-surface-container"><tr>
+          <th class="p-2.5 text-left font-semibold whitespace-nowrap">Nama Santri</th>
+          <th class="p-2.5 text-center font-semibold whitespace-nowrap">Jumlah Setoran</th>
+          <th class="p-2.5 text-left font-semibold whitespace-nowrap">Nilai</th>
+          <th class="p-2.5 text-center font-semibold whitespace-nowrap">Kualitas</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+
+      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Kontribusi Setoran &amp; Kualitas per Santri</h3>
+      ${hafalanExportBarChartHtml(chart2Data, { barColor:"bg-secondary", nameAbove:true, suffix:"%" })}
+    </div>`;
+}
+
+async function confirmHafalanExportDownload(){
+  const range = { type: hafalanExportRangeType };
+  if(range.type === "range"){
+    range.from = (document.getElementById("hafalan-export-date-from")||{}).value || "";
+    range.to = (document.getElementById("hafalan-export-date-to")||{}).value || "";
+    if(!range.from && !range.to){
+      const err = document.getElementById("hafalan-export-error");
+      if(err){ err.textContent = "Isi tanggal awal atau tanggal akhir."; err.classList.remove("hidden"); }
+      return;
+    }
+  }
+  if(typeof html2canvas !== "function"){ toast("Fitur unduh belum siap, coba lagi sebentar.", "error"); return; }
+  const btn = document.getElementById("hafalan-export-confirm-btn");
+  if(btn){ btn.disabled = true; btn.textContent = "Menyiapkan..."; }
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-99999px;top:0;z-index:-1";
+  holder.innerHTML = hafalanExportBuildCaptureHtml(range);
+  document.body.appendChild(holder);
+  try{
+    if(document.fonts && document.fonts.ready){ await document.fonts.ready; }
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    const canvas = await html2canvas(holder.firstElementChild, { scale:2, backgroundColor:"#ffffff", useCORS:true });
+    const a = document.createElement("a");
+    a.download = `Laporan_Hafalan_${range.type}_${todayISO()}.png`;
+    a.href = canvas.toDataURL("image/png");
+    a.click();
+    closeHafalanExportModal();
+  }catch(e){
+    console.error(e);
+    toast("Gagal membuat gambar laporan.", "error");
+  }finally{
+    holder.remove();
+    if(btn){ btn.disabled = false; btn.textContent = "Unduh"; }
+  }
 }
 
 function hafalanSearchWidgetHtml(){

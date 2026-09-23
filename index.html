@@ -66,6 +66,10 @@ tailwind.config = {
 </script>
 <style>
   .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; font-size: 20px; vertical-align: middle; }
+  /* Ikon lonceng notifikasi di header: berdenting saat baru diaktifkan */
+  @keyframes bellRing { 0%,100% { transform: rotate(0deg); } 10% { transform: rotate(-16deg); } 20% { transform: rotate(13deg); } 30% { transform: rotate(-10deg); } 40% { transform: rotate(7deg); } 50% { transform: rotate(-5deg); } 60% { transform: rotate(3deg); } 70% { transform: rotate(-1deg); } 80%,100% { transform: rotate(0deg); } }
+  #notif-bell-icon { display: inline-block; transform-origin: 50% 0%; }
+  #notif-bell-icon.bell-ring { animation: bellRing .65s ease-in-out; }
   /* Kartu menu Kontrol: hilangkan segitiga bawaan browser, tambah transisi buka/tutup yang rapi */
   .ctrl-card > summary { list-style: none; }
   .ctrl-card > summary::-webkit-details-marker, .ctrl-card > summary::marker { display: none; content: ""; }
@@ -949,6 +953,9 @@ body.ui-wide .tm-bottom-nav{left:50%;right:auto;width:640px;max-width:100%;trans
           <div id="teacher-page-title-menu" class="relative hidden"></div>
         </div>
         <div class="flex items-center gap-3">
+          <button id="notif-bell-btn" onclick="toggleNotifBell()" aria-pressed="false" class="relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container text-on-surface-variant transition-colors" title="Notifikasi" aria-label="Notifikasi">
+            <span id="notif-bell-icon" class="material-symbols-outlined text-[22px]">notifications_off</span>
+          </button>
           <button onclick="openTeacherProfileModal()" class="flex items-center gap-3 hover:opacity-80 transition-opacity" title="Edit profil saya">
             <span class="text-sm text-on-surface-variant hidden sm:block">Halo, <span id="teacher-name-display" class="font-semibold text-on-surface"></span></span>
             <div class="flex flex-col items-center gap-0.5">
@@ -5199,7 +5206,6 @@ function ctrlGroup(itemsHtml){
 const CTRL_CATEGORY_LABELS = {
   akses: "Akses & Notifikasi",
   "akun-guru": "Akun Guru",
-  notifikasi: "Notifikasi",
   sistem: "Pengaturan Sistem",
 };
 let ctrlActiveCategory = null;
@@ -10448,6 +10454,7 @@ async function resolveTeacherRole(acc, slug){
       if(fn && !isUserTyping()) fn();
     }
     if(typeof syncPushRegistration === "function") syncPushRegistration();
+    if(typeof syncNotifBellUi === "function") syncNotifBellUi();
   }catch(e){ console.error("Gagal menentukan peran:", e); }
 }
 function visibleTeacherNavItems(){
@@ -11775,7 +11782,6 @@ function renderPaymentsToolbar(){
   el.prepend(bar);
 }
 function afterControlRender(){
-  renderPushCard();
   if(isAdmin()){
     renderControlAdminExtras();
     setupCtrlSwitcher();
@@ -11949,18 +11955,40 @@ function pushCardInner(){
 function renderPushCardBody(){
   const el = document.getElementById("push-card-body");
   if(el) el.innerHTML = pushCardInner();
+  syncNotifBellUi();
 }
-function renderPushCard(){
-  const host = document.getElementById("teacher-content");
-  if(!host) return;
-  const old = document.getElementById("ctrl-cat-notifikasi");
-  if(old) old.remove();
-  const box = document.createElement("div");
-  box.id = "ctrl-cat-notifikasi";
-  box.dataset.ctrlCat = "notifikasi";
-  box.className = "hidden max-w-3xl";
-  box.innerHTML = ctrlGroup(ctrlCard("Notifikasi di Perangkat Ini", "notifications_active", `<div id="push-card-body">${pushCardInner()}</div>`, true));
-  host.appendChild(box);
+/* ---------- ikon lonceng notifikasi di header ---------- */
+// Tampilan lonceng: aktif = lonceng biasa warna hijau, nonaktif = lonceng bergaris miring, abu-abu.
+// Berdenting (goyang) sesaat setelah berhasil diaktifkan.
+function syncNotifBellUi(justEnabled){
+  const btn = document.getElementById("notif-bell-btn");
+  const icon = document.getElementById("notif-bell-icon");
+  if(!btn || !icon) return;
+  const on = pushIsEnabled();
+  icon.textContent = on ? "notifications" : "notifications_off";
+  btn.classList.toggle("text-primary", on);
+  btn.classList.toggle("text-on-surface-variant", !on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.title = on ? "Notifikasi aktif \u2014 klik untuk matikan" : "Notifikasi nonaktif \u2014 klik untuk aktifkan";
+  if(justEnabled){
+    icon.classList.remove("bell-ring");
+    void icon.offsetWidth;   // paksa browser mengulang animasi dari awal
+    icon.classList.add("bell-ring");
+  } else {
+    icon.classList.remove("bell-ring");
+  }
+}
+async function toggleNotifBell(){
+  const btn = document.getElementById("notif-bell-btn");
+  if(!btn || btn.disabled) return;
+  btn.disabled = true;
+  try{
+    if(pushIsEnabled()) await disablePush();
+    else await enablePush();
+  } finally {
+    btn.disabled = false;
+    syncNotifBellUi(pushIsEnabled());
+  }
 }
 
 /* ---------- pengaturan notifikasi untuk Admin ---------- */

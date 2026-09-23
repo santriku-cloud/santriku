@@ -7669,8 +7669,9 @@ function hafalanExportBuildCaptureHtml(range){
 
   const composite = rows.map(r=>({ name: hafalanNicknameFor(r.name), score: r.jumlah + (r.pct||0) }));
   const totalComposite = composite.reduce((s,c)=>s+c.score,0) || 1;
+  const chart2Values = composite.map(c=> Math.round(c.score/totalComposite*100)).sort((a,b)=> b-a);
   const chart2Data = composite
-    .map(c=>({ name:c.name, value: Math.round(c.score/totalComposite*100) }))
+    .map(c=>{ const value = Math.round(c.score/totalComposite*100); return { name:c.name, value, color: hafalanRankColor(value, chart2Values) }; })
     .sort((a,b)=> a.value-b.value || a.name.localeCompare(b.name));
 
   const tableRows = rows.map(r=>`
@@ -7711,7 +7712,8 @@ function hafalanExportBuildCaptureHtml(range){
       <p class="text-[9px] text-on-surface-variant mt-2">Jumlah Ayat: warna berdasarkan peringkat (emas = tertinggi, lalu hijau, biru, merah = terendah). Kualitas: <span style="color:#ef4444">merah &lt;40</span> · <span style="color:#2563eb">biru 40–69</span> · <span style="color:#16a34a">hijau 70–89</span> · <span style="color:#d4af37">emas ≥90</span></p>
 
       <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Kontribusi Setoran &amp; Kualitas per Santri</h3>
-      ${hafalanExportBarChartHtml(chart2Data, { nameAbove:true, suffix:"%", colorByValue:true, containerWidth: contentWidth })}
+      ${hafalanExportBarChartHtml(chart2Data, { nameAbove:true, suffix:"%", containerWidth: contentWidth })}
+      <p class="text-[9px] text-on-surface-variant mt-2">Warna balok mengikuti peringkat: <span style="color:#d4af37">emas = tertinggi</span> · <span style="color:#16a34a">hijau</span> · <span style="color:#2563eb">biru</span> · <span style="color:#ef4444">merah = terendah</span></p>
     </div>`;
 }
 

@@ -6409,13 +6409,14 @@ function renderTeacherStudents(){
         <table class="w-full text-left text-sm">
           <thead>
             <tr class="bg-surface text-on-surface-variant text-xs uppercase">
-              <th class="p-4 whitespace-nowrap">Nama</th><th class="p-4 whitespace-nowrap">NIK</th><th class="p-4 whitespace-nowrap">Kode</th><th class="p-4 whitespace-nowrap">Kelas</th><th class="p-4 whitespace-nowrap">Email Orang Tua</th><th class="p-4 whitespace-nowrap">No. WA Orang Tua</th><th class="p-4 whitespace-nowrap">Total Poin</th><th class="p-4"></th>
+              <th class="p-4 whitespace-nowrap">Nama</th><th class="p-4 whitespace-nowrap">Nama Panggilan</th><th class="p-4 whitespace-nowrap">NIK</th><th class="p-4 whitespace-nowrap">Kode</th><th class="p-4 whitespace-nowrap">Kelas</th><th class="p-4 whitespace-nowrap">Email Orang Tua</th><th class="p-4 whitespace-nowrap">No. WA Orang Tua</th><th class="p-4 whitespace-nowrap">Total Poin</th><th class="p-4"></th>
             </tr>
           </thead>
           <tbody>
             ${DB.students.map(s=>`
               <tr class="border-t border-outline-variant hover:bg-surface-container-low">
                 <td class="p-4 font-medium whitespace-nowrap">${s.name}</td>
+                <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.nickname || "-"}</td>
                 <td class="p-4 text-on-surface-variant">${s.nik}</td>
                 <td class="p-4 text-on-surface-variant">${s.code}</td>
                 <td class="p-4 text-on-surface-variant whitespace-nowrap">${s.kelas||"-"}</td>
@@ -6428,7 +6429,7 @@ function renderTeacherStudents(){
                   <button onclick="deleteStudent('${s.id}')" class="text-error hover:underline text-xs font-semibold">Hapus</button>
                 </td>
               </tr>`).join("")}
-            ${DB.students.length===0?`<tr><td colspan="8" class="p-6 text-center text-on-surface-variant">Belum ada data siswa.</td></tr>`:""}
+            ${DB.students.length===0?`<tr><td colspan="9" class="p-6 text-center text-on-surface-variant">Belum ada data siswa.</td></tr>`:""}
           </tbody>
         </table>
       </div>
@@ -7520,9 +7521,18 @@ function hafalanExportComputeData(range){
   return [...people.values()];
 }
 
+/* Nama panggilan santri (diatur santri sendiri lewat akunnya / kartu pelajar).
+   Jatuh ke kata pertama nama lengkap jika belum diisi. */
+function hafalanNicknameFor(fullName){
+  const key = hafalanNameKey(fullName);
+  const st = (DB.students||[]).find(s=>hafalanNameKey(s.name)===key);
+  if(st && st.nickname) return st.nickname;
+  const first = String(fullName||"").trim().split(/\s+/)[0];
+  return first || fullName || "-";
+}
+
 /* Nilai kualitas 0-100: Lancar=100, Cukup=50, Perlu diulang=0, dirata-ratakan
    dari setoran yang sudah dinilai saja. null jika belum ada yang dinilai. */
-const HAFALAN_QUALITY_WEIGHT = { lancar:100, cukup:50, ulang:0 };
 function hafalanExportQuality(reports){
   const counts = { lancar:0, cukup:0, ulang:0, belum:0 };
   reports.forEach(r=>{ counts[r.quality && counts[r.quality] !== undefined ? r.quality : "belum"]++; });
@@ -7538,54 +7548,95 @@ function hafalanExportQualitySummary(counts){
   if(counts.belum) parts.push(`${counts.belum} Belum dinilai`);
   return parts.length ? parts.join(", ") : "-";
 }
-/* Lingkaran persentase kualitas (SVG ring), warna biru sesuai permintaan. */
+/* Warna berjenjang menurut nilai: <40 merah, 40-69 biru, 70-89 hijau, >=90 emas. */
+function hafalanScoreColor(pct){
+  const p = pct == null ? -1 : pct;
+  if(p >= 90) return "#d4af37"; // emas
+  if(p >= 70) return "#16a34a"; // hijau
+  if(p >= 40) return "#2563eb"; // biru
+  if(p >= 0) return "#ef4444";  // merah
+  return "#94a3b8"; // abu-abu: belum ada nilai
+}
+/* Lingkaran persentase kualitas (SVG ring), warnanya berubah menurut nilai. */
 function hafalanExportQualityRing(pct){
   const p = pct == null ? 0 : Math.max(0, Math.min(100, pct));
+  const color = hafalanScoreColor(pct);
   const r = 20, c = Math.round(2*Math.PI*r);
   const off = Math.round(c - (p/100)*c);
   return `<div class="relative flex items-center justify-center shrink-0" style="width:52px;height:52px">
     <svg width="52" height="52" viewBox="0 0 52 52" style="transform:rotate(-90deg)">
       <circle cx="26" cy="26" r="${r}" fill="none" stroke="#e2e8f0" stroke-width="6"/>
-      <circle cx="26" cy="26" r="${r}" fill="none" stroke="#2563eb" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
+      <circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="${off}"/>
     </svg>
-    <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold" style="color:#2563eb">${pct == null ? "-" : pct}</span>
+    <span class="absolute inset-0 flex items-center justify-center text-[11px] font-bold" style="color:${color}">${pct == null ? "-" : pct}</span>
   </div>`;
 }
 
-/* Grafik batang (tanpa scroll, untuk gambar yang diunduh) — sama seperti hafalanChartHtml
-   tapi mengambil seluruh lebar supaya tidak terpotong saat difoto html2canvas. */
+/* Label vertikal berbasis SVG <text> (bukan writing-mode) supaya tidak
+   tampil terbalik/cermin saat difoto html2canvas. below=true: teks menggantung
+   di bawah titik acuan (dipakai di bawah batang). below=false: teks menjulang
+   ke atas berakhir di titik acuan (dipakai di atas batang). */
+function hafalanVerticalLabelSvg(text, w, h, below){
+  const fs = 9;
+  const x = w/2;
+  const y = below ? fs : h;
+  const anchor = below ? "start" : "end";
+  return `<svg width="${w}" height="${h}" style="display:block;overflow:hidden">
+    <text x="${x}" y="${y}" font-size="${fs}" fill="#3f4d42" text-anchor="${anchor}" transform="rotate(90 ${x} ${y})" font-family="Hanken Grotesk, Arial, sans-serif">${escapeHtml(text)}</text>
+  </svg>`;
+}
+
+/* Grafik batang untuk gambar yang diunduh: lebar menyesuaikan area konten
+   (kertas A4) — kolom batang otomatis menyempit/berbaris ke bawah (wrap)
+   supaya semua data tetap muat, tidak terpotong. */
 function hafalanExportBarChartHtml(data, opts){
   if(!data.length) return `<p class="text-xs text-on-surface-variant">Tidak ada data pada periode ini.</p>`;
   const max = Math.max(1, ...data.map(d=>d.value));
   const H = 84;
-  const barColor = opts.barColor || "bg-primary";
+  const containerWidth = opts.containerWidth || 700;
+  const gap = 4;
+  const desiredCol = 34, minCol = 18;
+  let colWidth = desiredCol;
+  const neededWidth = data.length * (desiredCol + gap);
+  if(neededWidth > containerWidth) colWidth = Math.max(minCol, Math.floor(containerWidth/data.length) - gap);
+  const barW = Math.max(6, Math.min(20, colWidth - 12));
+  const nameAbove = !!opts.nameAbove;
+  const labelH = colWidth < 26 ? 54 : 66;
   const cols = data.map(d=>{
     const h = d.value ? Math.max(4, Math.round(d.value/max*H)) : 2;
-    const nameAbove = opts.nameAbove;
-    return `<div class="flex flex-col items-center shrink-0" style="width:34px">
-      ${nameAbove ? `
-      <div class="flex flex-col items-center justify-end" style="height:96px">
-        <div style="writing-mode:vertical-rl;transform:rotate(180deg);height:66px;overflow:hidden;white-space:nowrap" class="text-[9px] text-on-surface-variant">${escapeHtml(d.name)}</div>
-        <span class="text-[10px] font-bold text-primary mt-0.5">${d.value}${opts.suffix||""}</span>
-      </div>
-      <div class="w-5 rounded-t ${d.value ? barColor : "bg-outline-variant"}" style="height:${h}px"></div>` : `
+    const barColor = opts.colorByValue ? hafalanScoreColor(d.value) : opts.barColor;
+    const barStyle = `height:${h}px;background:${d.value ? barColor : "#bfccc1"}`;
+    if(nameAbove){
+      return `<div class="flex flex-col items-center shrink-0" style="width:${colWidth}px">
+        <div class="flex flex-col items-center justify-end" style="height:${labelH+14}px">
+          ${hafalanVerticalLabelSvg(d.name, colWidth, labelH, false)}
+          <span class="text-[10px] font-bold mt-0.5" style="color:${d.value ? barColor : "#3f4d42"}">${d.value}${opts.suffix||""}</span>
+        </div>
+        <div class="rounded-t" style="width:${barW}px;${barStyle}"></div>
+      </div>`;
+    }
+    return `<div class="flex flex-col items-center shrink-0" style="width:${colWidth}px">
       <div class="flex flex-col items-center justify-end" style="height:${H+16}px">
         <span class="text-[10px] font-semibold text-on-surface-variant mb-0.5">${d.value}${opts.suffix||""}</span>
-        <div class="w-5 rounded-t ${d.value ? barColor : "bg-outline-variant"}" style="height:${h}px"></div>
+        <div class="rounded-t" style="width:${barW}px;${barStyle}"></div>
       </div>
-      <div class="mt-1 text-[9px] text-on-surface-variant" style="writing-mode:vertical-rl;transform:rotate(180deg);height:76px;overflow:hidden;white-space:nowrap">${escapeHtml(d.name)}</div>`}
+      <div class="mt-1">${hafalanVerticalLabelSvg(d.name, colWidth, labelH, true)}</div>
     </div>`;
   }).join("");
-  return `<div class="flex items-end gap-1 border-b border-outline-variant" style="width:max-content">${cols}</div>`;
+  return `<div class="flex flex-wrap items-end gap-1 border-b border-outline-variant" style="width:100%">${cols}</div>`;
 }
 
 /* Susun seluruh konten yang akan difoto: judul, grafik total setoran,
-   tabel per santri (jumlah setoran, nilai, kualitas), lalu grafik kontribusi. */
+   tabel per santri (jumlah setoran, nilai, kualitas), lalu grafik kontribusi.
+   Lebar total mengikuti lebar kertas A4 (portrait, ±210mm @96dpi). */
 function hafalanExportBuildCaptureHtml(range){
+  const A4_WIDTH = 794;   // px @96dpi ~ 210mm (lebar), tinggi menyesuaikan isi
+  const PAD = 24;         // p-6
+  const contentWidth = A4_WIDTH - PAD*2;
   const people = hafalanExportComputeData(range);
 
   const chart1Data = people
-    .map(p=>({ name:p.name, value: hafalanUniqueAyatTotal(p.reports) }))
+    .map(p=>({ name: hafalanNicknameFor(p.name), value: hafalanUniqueAyatTotal(p.reports) }))
     .sort((a,b)=> a.value-b.value || a.name.localeCompare(b.name));
 
   const rows = people.map(p=>{
@@ -7594,7 +7645,7 @@ function hafalanExportBuildCaptureHtml(range){
     return { name:p.name, jumlah, counts:q.counts, pct:q.pct };
   }).sort((a,b)=> b.jumlah-a.jumlah || a.name.localeCompare(b.name));
 
-  const composite = rows.map(r=>({ name:r.name, score: r.jumlah + (r.pct||0) }));
+  const composite = rows.map(r=>({ name: hafalanNicknameFor(r.name), score: r.jumlah + (r.pct||0) }));
   const totalComposite = composite.reduce((s,c)=>s+c.score,0) || 1;
   const chart2Data = composite
     .map(c=>({ name:c.name, value: Math.round(c.score/totalComposite*100) }))
@@ -7612,7 +7663,7 @@ function hafalanExportBuildCaptureHtml(range){
   const generatedAt = new Date().toLocaleString("id-ID", { dateStyle:"long", timeStyle:"short" });
 
   return `
-    <div style="width:max-content;min-width:820px" class="bg-white p-6 font-body text-on-surface">
+    <div style="width:${A4_WIDTH}px" class="bg-white p-6 font-body text-on-surface">
       <div class="mb-4">
         <h2 class="font-display font-bold text-lg">${escapeHtml(schoolName)}</h2>
         <p class="text-sm font-semibold text-on-surface-variant">Laporan Hafalan — ${escapeHtml(hafalanExportRangeLabel(range))}</p>
@@ -7620,7 +7671,7 @@ function hafalanExportBuildCaptureHtml(range){
       </div>
 
       <h3 class="text-xs font-bold text-on-surface-variant mb-2 uppercase tracking-wide">Total Ayat Setoran per Santri</h3>
-      ${hafalanExportBarChartHtml(chart1Data, { barColor:"bg-primary" })}
+      ${hafalanExportBarChartHtml(chart1Data, { barColor:"#0f6b3c", containerWidth: contentWidth })}
 
       <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Rincian per Santri</h3>
       <table class="text-xs" style="width:100%;border-collapse:collapse">
@@ -7632,9 +7683,10 @@ function hafalanExportBuildCaptureHtml(range){
         </tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
+      <p class="text-[9px] text-on-surface-variant mt-2">Kualitas: <span style="color:#ef4444">merah &lt;40</span> · <span style="color:#2563eb">biru 40–69</span> · <span style="color:#16a34a">hijau 70–89</span> · <span style="color:#d4af37">emas ≥90</span></p>
 
       <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Kontribusi Setoran &amp; Kualitas per Santri</h3>
-      ${hafalanExportBarChartHtml(chart2Data, { barColor:"bg-secondary", nameAbove:true, suffix:"%" })}
+      ${hafalanExportBarChartHtml(chart2Data, { nameAbove:true, suffix:"%", colorByValue:true, containerWidth: contentWidth })}
     </div>`;
 }
 

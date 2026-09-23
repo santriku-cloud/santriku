@@ -7694,7 +7694,7 @@ function hafalanExportBuildCaptureHtml(range){
         <p class="text-[10px] text-on-surface-variant">Diunduh: ${generatedAt}</p>
       </div>
 
-      <h3 class="text-xs font-bold text-on-surface-variant mb-2 uppercase tracking-wide">Total Ayat Setoran per Santri</h3>
+      <h3 class="text-xs font-bold text-on-surface-variant mb-2 uppercase tracking-wide">Total Ayat Setoran</h3>
       ${hafalanExportBarChartHtml(chart1Data, { barColor:"#0f6b3c", containerWidth: contentWidth })}
       <p class="text-[9px] text-on-surface-variant mt-2">Warna balok mengikuti peringkat jumlah ayat: <span style="color:#d4af37">emas = tertinggi</span> · <span style="color:#16a34a">hijau</span> · <span style="color:#2563eb">biru</span> · <span style="color:#ef4444">merah = terendah</span></p>
 
@@ -7711,7 +7711,7 @@ function hafalanExportBuildCaptureHtml(range){
       </table>
       <p class="text-[9px] text-on-surface-variant mt-2">Jumlah Ayat: warna berdasarkan peringkat (emas = tertinggi, lalu hijau, biru, merah = terendah). Kualitas: <span style="color:#ef4444">merah &lt;40</span> · <span style="color:#2563eb">biru 40–69</span> · <span style="color:#16a34a">hijau 70–89</span> · <span style="color:#d4af37">emas ≥90</span></p>
 
-      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Kontribusi Setoran &amp; Kualitas per Santri</h3>
+      <h3 class="text-xs font-bold text-on-surface-variant mt-6 mb-2 uppercase tracking-wide">Bobot &amp; Kualitas setoran</h3>
       ${hafalanExportBarChartHtml(chart2Data, { nameAbove:true, suffix:"%", containerWidth: contentWidth })}
       <p class="text-[9px] text-on-surface-variant mt-2">Warna balok mengikuti peringkat: <span style="color:#d4af37">emas = tertinggi</span> · <span style="color:#16a34a">hijau</span> · <span style="color:#2563eb">biru</span> · <span style="color:#ef4444">merah = terendah</span></p>
     </div>`;

@@ -7541,16 +7541,17 @@ function hafalanNicknameFor(fullName){
 /* Nilai kualitas 0-100: Lancar=100, Cukup=50, Perlu diulang=0, dirata-ratakan
    dari setoran yang sudah dinilai saja. null jika belum ada yang dinilai. */
 function hafalanExportQuality(reports){
-  const counts = { lancar:0, cukup:0, ulang:0, belum:0 };
+  const counts = { mumtaz:0, lancar:0, cukup:0, ulang:0, belum:0 };
   reports.forEach(r=>{ counts[r.quality && counts[r.quality] !== undefined ? r.quality : "belum"]++; });
-  const graded = counts.lancar + counts.cukup + counts.ulang;
-  const pct = graded ? Math.round((counts.lancar*100 + counts.cukup*50 + counts.ulang*0) / graded) : null;
+  const graded = counts.mumtaz + counts.lancar + counts.cukup + counts.ulang;
+  const pct = graded ? Math.round((counts.mumtaz*100 + counts.lancar*80 + counts.cukup*55 + counts.ulang*0) / graded) : null;
   return { counts, pct };
 }
 function hafalanExportQualitySummary(counts){
   const parts = [];
-  if(counts.lancar) parts.push(`${counts.lancar} Lancar`);
-  if(counts.cukup) parts.push(`${counts.cukup} Cukup`);
+  if(counts.mumtaz) parts.push(`${counts.mumtaz} Mumtaz`);
+  if(counts.lancar) parts.push(`${counts.lancar} Jayyid Jiddan`);
+  if(counts.cukup) parts.push(`${counts.cukup} Jayyid`);
   if(counts.ulang) parts.push(`${counts.ulang} Perlu diulang`);
   if(counts.belum) parts.push(`${counts.belum} Belum dinilai`);
   return parts.length ? parts.join(", ") : "-";
@@ -11267,10 +11268,14 @@ function renderControlAdminExtras(){
    HAFALAN UNTUK ORANG TUA & SANTRI, PENILAIAN HAFALAN, PENGUMUMAN, RINGKASAN ABSENSI
    ========================================================= */
 const HAFALAN_QUALITY = {
-  lancar: { label:"Lancar",        cls:"bg-secondary-container text-on-secondary-container" },
-  cukup:  { label:"Cukup",         cls:"bg-tertiary-fixed text-on-tertiary-fixed" },
+  mumtaz: { label:"Mumtaz (\u0645\u064f\u0645\u0652\u062a\u064e\u0627\u0632) \u2014 Luar biasa", cls:"bg-[#d4af37]/15 text-[#8a6d1a]" },
+  lancar: { label:"Jayyid Jiddan (\u062c\u064e\u064a\u0651\u0650\u062f \u062c\u0650\u062f\u064e\u0651\u0627) \u2014 Sangat baik", cls:"bg-secondary-container text-on-secondary-container" },
+  cukup:  { label:"Jayyid (\u062c\u064e\u064a\u0651\u0650\u062f) \u2014 Baik", cls:"bg-tertiary-fixed text-on-tertiary-fixed" },
+  // "ulang" sengaja tidak lagi ditawarkan sebagai pilihan (lihat filter di dropdown di bawah),
+  // tapi tetap didaftarkan supaya setoran lama yang sudah dinilai "Perlu diulang" tetap tampil benar.
   ulang:  { label:"Perlu diulang", cls:"bg-error-container text-on-error-container" }
 };
+const HAFALAN_QUALITY_SELECTABLE = Object.keys(HAFALAN_QUALITY).filter(k => k !== "ulang");
 function hafalanQualityBadge(q){
   const x = HAFALAN_QUALITY[q];
   return x ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${x.cls}">${x.label}</span>` : "";
@@ -11434,7 +11439,8 @@ function portalExtraCardsHtml(s, audience){
 function hafalanGradeSelectHtml(r){
   return `<select onchange="setHafalanQuality('${r.id}', this.value)" class="px-1.5 py-1 rounded-md border border-outline-variant text-xs bg-white outline-none focus:border-primary">
     <option value="">Belum dinilai</option>
-    ${Object.entries(HAFALAN_QUALITY).map(([k,v])=>`<option value="${k}" ${r.quality===k?"selected":""}>${v.label}</option>`).join("")}
+    ${HAFALAN_QUALITY_SELECTABLE.map(k=>HAFALAN_QUALITY[k]).map((v,i)=>{ const k=HAFALAN_QUALITY_SELECTABLE[i]; return `<option value="${k}" ${r.quality===k?"selected":""}>${v.label}</option>`; }).join("")}
+    ${r.quality==="ulang" ? `<option value="ulang" selected>${HAFALAN_QUALITY.ulang.label}</option>` : ""}
   </select>`;
 }
 async function setHafalanQuality(id, q){

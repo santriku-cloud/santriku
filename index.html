@@ -5964,7 +5964,25 @@ function downloadLaporan(){
   else exportLaporanExcel(keys, currentLaporanFilter());
 }
 
-/* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file Excel (satu sheet per jenis). */
+// Hitung lebar kolom Excel otomatis berdasarkan isi terpanjang tiap kolom,
+// supaya teks tidak kepotong / berantakan seperti tampilan default SheetJS.
+function excelAutoColWidths(headers, rows){
+  return headers.map(h=>{
+    let max = String(h).length;
+    rows.forEach(r=>{
+      const v = r[h];
+      const len = (v===null || v===undefined) ? 0 : String(v).length;
+      if(len > max) max = len;
+    });
+    return { wch: Math.min(Math.max(max + 2, 10), 45) };
+  });
+}
+
+/* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file Excel (satu sheet per jenis).
+   Tiap sheet diberi kop judul (judul laporan, nama sekolah, tanggal unduh) seperti pada versi Print/PDF,
+   lalu tabel data dengan lebar kolom otomatis supaya rapi.
+   Catatan: logo tidak bisa disisipkan ke sheet Excel dengan library gratis (SheetJS) yang dipakai di sini
+   — fitur sisip gambar hanya tersedia di versi berbayarnya. Untuk laporan dengan logo, gunakan unduh PDF/Gambar. */
 function exportLaporanExcel(keys, filter){
   if(!window.XLSX){ toast("Library Excel belum siap, coba lagi sebentar.", "error"); return; }
   const wb = XLSX.utils.book_new();
@@ -5979,7 +5997,27 @@ function exportLaporanExcel(keys, filter){
     let i = 2;
     while(usedNames.has(sheetName)){ sheetName = sheetName.slice(0, 28) + "_" + i; i++; }
     usedNames.add(sheetName);
-    const ws = XLSX.utils.json_to_sheet(rows);
+
+    const headers = Object.keys(rows[0]);
+    const title = laporanTitleFor(lt);
+    const aoa = [
+      [title],
+      ["SMK Muhammadiyah Kendari"],
+      [`Dicetak: ${formatDate(todayISO())}`],
+      [],
+      headers,
+      ...rows.map(r => headers.map(h => r[h]))
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const lastCol = Math.max(headers.length - 1, 0);
+    ws["!merges"] = [
+      { s:{r:0,c:0}, e:{r:0,c:lastCol} },
+      { s:{r:1,c:0}, e:{r:1,c:lastCol} },
+      { s:{r:2,c:0}, e:{r:2,c:lastCol} },
+    ];
+    ws["!cols"] = excelAutoColWidths(headers, rows);
+    ws["!rows"] = [{ hpx: 22 }, { hpx: 20 }, { hpx: 18 }];
+
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   });
   if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
@@ -11941,7 +11979,16 @@ function exportAttendanceRekap(){
   const data = [["Nama","Kelas","Hadir","Izin","Sakit","Alfa","Hari diabsen","% Hadir"]].concat(
     attendanceRekapRows().map(({s,st})=>[s.name, s.kelas||"", st.H, st.I, st.S, st.A, st.days, st.days ? st.pct : ""]));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), "Rekap Absensi");
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  ws["!cols"] = data[0].map((h,ci)=>{
+    let max = String(h).length;
+    data.slice(1).forEach(row=>{
+      const len = row[ci]==null ? 0 : String(row[ci]).length;
+      if(len > max) max = len;
+    });
+    return { wch: Math.min(Math.max(max + 2, 10), 45) };
+  });
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
   XLSX.writeFile(wb, "Rekap-Absensi-"+attMonth+".xlsx");
 }
 

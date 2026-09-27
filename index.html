@@ -5737,6 +5737,9 @@ function renderTeacherLaporan(){
         <button onclick="downloadLaporan()" ${!ls.types.length?"disabled":""} class="flex-1 bg-secondary-container/40 text-on-secondary-container rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
           <span class="material-symbols-outlined text-[18px]">download</span> Unduh
         </button>
+        <button onclick="downloadLaporanImage()" ${!ls.types.length?"disabled":""} class="flex-1 bg-primary/10 text-primary rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
+          <span class="material-symbols-outlined text-[18px]">image</span> Gambar
+        </button>
         <button onclick="printLaporan()" ${!ls.types.length?"disabled":""} class="flex-1 bg-tertiary-fixed text-on-tertiary-fixed rounded-lg text-sm font-semibold py-2.5 hover:shadow transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed">
           <span class="material-symbols-outlined text-[18px]">print</span> Print
         </button>
@@ -5830,7 +5833,7 @@ function laporanRows(key, filter){
     return [...(DB.hafalanReports||[])]
       .filter(r=> matchesDateFilter(r.date, filter))
       .sort((a,b)=> new Date((b.date||"")+"T"+(b.time||"00:00"))-new Date((a.date||"")+"T"+(a.time||"00:00")))
-      .map(r=>({"Nama Siswa": r.studentName||"-", "Dari": `${r.fromSurah||"-"} ayat ${r.fromAyah||"-"}`, "Sampai": `${r.toSurah||"-"} ayat ${r.toAyah||"-"}`, "Tanggal": formatDate(r.date), "Waktu": r.time||"-"}));
+      .map(r=>({"Nama Siswa": r.studentName||"-", "Dari": `${r.fromSurah||"-"} ayat ${r.fromAyah||"-"}`, "Sampai": `${r.toSurah||"-"} ayat ${r.toAyah||"-"}`, "Tanggal": formatDate(r.date), "Waktu": r.time||"-", "Nilai": (typeof HAFALAN_QUALITY !== "undefined" && r.quality && HAFALAN_QUALITY[r.quality]) ? HAFALAN_QUALITY[r.quality].label : "Belum dinilai"}));
   }
   if(key === "pembayaran"){
     const rows = [];
@@ -5954,29 +5957,87 @@ function exportLaporanExcel(keys, filter){
 }
 
 /* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file PDF (satu halaman per jenis). */
+function laporanTitleLabel(key){
+  const lt = LAPORAN_TYPES.find(l=>l.key===key);
+  const label = lt ? lt.label : key;
+  return /^laporan\b/i.test(label) ? label : `Laporan ${label}`;
+}
+
+function laporanBrandData(){
+  const schoolLogo = (typeof SCHOOL_LOGO_MARITIM_B64 !== "undefined") ? SCHOOL_LOGO_MARITIM_B64 : "";
+  const sibestLogo = (document.querySelector("#role-logo-img") || document.querySelector("#app-favicon"));
+  return { schoolLogo, sibestLogo: sibestLogo ? (sibestLogo.src || sibestLogo.href || "") : "" };
+}
+
+function laporanBrandHtml(key, dateText){
+  const brand = laporanBrandData();
+  const title = escapeHtml(laporanTitleLabel(key));
+  const school = escapeHtml((DB.settings && DB.settings.schoolName) || "SMK Muhammadiyah Kendari");
+  return `<div class="laporan-kop">
+    <img class="laporan-logo laporan-logo-school" src="${brand.schoolLogo}" alt="Logo SMK Muhammadiyah Kendari"/>
+    <div class="laporan-kop-center"><div class="laporan-judul">${title}</div><div class="laporan-sekolah">${school}</div><div class="laporan-tanggal">${escapeHtml(dateText)}</div></div>
+    <img class="laporan-logo laporan-logo-sibest" src="${brand.sibestLogo}" alt="Logo SIBEST"/>
+  </div>`;
+}
+
+function laporanTableHtml(rows){
+  const headers = Object.keys(rows[0] || {});
+  return `<table><thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h] ?? "-"))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+}
+
+/* Mendukung satu atau beberapa jenis data sekaligus — satu halaman kop per jenis. */
 function exportLaporanPDF(keys, filter){
   if(!window.jspdf){ toast("Library PDF belum siap, coba lagi sebentar.", "error"); return; }
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: "landscape" });
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm" });
+  const brand = laporanBrandData();
   let anyRows = false, isFirstPage = true;
   keys.forEach(key=>{
     const rows = laporanRows(key, filter);
     if(!rows.length) return;
     if(!isFirstPage) doc.addPage();
-    isFirstPage = false;
-    anyRows = true;
-    const lt = LAPORAN_TYPES.find(l=>l.key===key);
-    doc.setFontSize(14);
-    doc.text(`Laporan ${lt?lt.label:key} - SMK Muhammadiyah Kendari`, 14, 15);
-    doc.setFontSize(9);
-    doc.text(`Diunduh: ${formatDate(todayISO())}`, 14, 21);
-    const head = [Object.keys(rows[0])];
-    const body = rows.map(r => Object.values(r));
-    doc.autoTable({ head, body, startY: 26, styles: { fontSize: 8 }, headStyles: { fillColor: [0,93,167] } });
+    isFirstPage = false; anyRows = true;
+    const title = laporanTitleLabel(key);
+    const school = (DB.settings && DB.settings.schoolName) || "SMK Muhammadiyah Kendari";
+    if(brand.schoolLogo) doc.addImage(brand.schoolLogo, "PNG", 12, 8, 18, 18);
+    if(brand.sibestLogo) doc.addImage(brand.sibestLogo, "PNG", 267, 8, 18, 18);
+    doc.setTextColor(15, 107, 60); doc.setFontSize(15); doc.setFont(undefined, "bold"); doc.text(title, 148.5, 14, { align:"center" });
+    doc.setTextColor(17, 17, 17); doc.setFontSize(12); doc.text(school, 148.5, 20, { align:"center" });
+    doc.setFont(undefined, "normal"); doc.setFontSize(8); doc.setTextColor(85,85,85); doc.text(`Diunduh: ${formatDate(todayISO())}`, 148.5, 25, { align:"center" });
+    const headers = Object.keys(rows[0]);
+    doc.autoTable({ head:[headers], body:rows.map(r=>headers.map(h=>r[h])), startY:30, margin:{left:12,right:12}, styles:{fontSize:8}, headStyles:{fillColor:[15,107,60], halign:"center"} });
   });
   if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
-  doc.save(laporanFileName(keys, "pdf"));
-  toast("Laporan PDF berhasil diunduh.");
+  doc.save(laporanFileName(keys, "pdf")); toast("Laporan PDF berhasil diunduh.");
+}
+
+async function downloadLaporanImage(){
+  const keys = laporanState.types;
+  if(!keys.length){ toast("Pilih minimal satu jenis data.", "error"); return; }
+  if(typeof html2canvas !== "function"){ toast("Fitur unduh gambar belum siap, coba lagi sebentar.", "error"); return; }
+  const dateText = `Diunduh: ${new Date().toLocaleDateString("id-ID", {day:"numeric", month:"long", year:"numeric"})}`;
+  const holder = document.createElement("div");
+  holder.style.cssText = "position:fixed;left:-99999px;top:0;z-index:-1;background:#fff";
+  document.body.appendChild(holder);
+  let count = 0;
+  try{
+    if(document.fonts && document.fonts.ready) await document.fonts.ready;
+    for(const key of keys){
+      const rows = laporanRows(key, currentLaporanFilter());
+      if(!rows.length) continue;
+      count++;
+      holder.innerHTML = `<div class="laporan-capture">${laporanBrandHtml(key, dateText)}${laporanTableHtml(rows)}</div>`;
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      const canvas = await html2canvas(holder.firstElementChild, {scale:2, backgroundColor:"#ffffff", useCORS:true});
+      const a = document.createElement("a");
+      a.download = `${laporanFileName([key], "png").replace(/\.png$/, "")}.png`;
+      a.href = canvas.toDataURL("image/png"); a.click();
+      await new Promise(resolve=>setTimeout(resolve, 150));
+    }
+    if(!count) toast("Tidak ada data untuk diunduh sebagai gambar.", "error");
+    else toast("Laporan berhasil diunduh sebagai gambar.");
+  }catch(e){ console.error(e); toast("Gagal membuat gambar laporan.", "error"); }
+  finally{ holder.remove(); }
 }
 
 /* Cetak langsung lewat dialog print browser (tanpa perlu mengunduh file dulu).
@@ -5986,47 +6047,21 @@ function printLaporan(){
   const keys = laporanState.types;
   if(!keys.length){ toast("Pilih minimal satu jenis data.", "error"); return; }
   const filter = currentLaporanFilter();
+  const dateText = `Dicetak: ${new Date().toLocaleDateString("id-ID", {day:"numeric", month:"long", year:"numeric"})}`;
   const sections = [];
   keys.forEach(key=>{
     const rows = laporanRows(key, filter);
     if(!rows.length) return;
-    const lt = LAPORAN_TYPES.find(l=>l.key===key);
-    const headers = Object.keys(rows[0]);
-    sections.push(`
-      <div class="section">
-        <h1>Laporan ${escapeHtml(lt?lt.label:key)} — SMK Muhammadiyah Kendari</h1>
-        <p class="sub">Dicetak: ${formatDate(todayISO())}</p>
-        <table>
-          <thead><tr>${headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
-          <tbody>${rows.map(r=>`<tr>${headers.map(h=>`<td>${escapeHtml(String(r[h]))}</td>`).join("")}</tr>`).join("")}</tbody>
-        </table>
-      </div>
-    `);
+    sections.push(`<div class="section">${laporanBrandHtml(key, dateText)}${laporanTableHtml(rows)}</div>`);
   });
   if(!sections.length){ toast("Tidak ada data untuk dicetak.", "error"); return; }
   const win = window.open("", "_blank");
   if(!win){ toast("Popup diblokir browser. Izinkan popup untuk mencetak.", "error"); return; }
-  win.document.write(`
-    <html><head><title>Laporan</title>
-    <style>
-      body{ font-family: Arial, Helvetica, sans-serif; padding: 24px; color:#111; }
-      h1{ font-size: 16px; margin: 0 0 2px; }
-      p.sub{ font-size: 11px; color:#555; margin: 0 0 16px; }
-      table{ width:100%; border-collapse: collapse; font-size: 11px; }
-      th, td{ border: 1px solid #ccc; padding: 6px 8px; text-align:left; }
-      th{ background:#f2f2f2; }
-      .section + .section{ margin-top: 32px; }
-      @media print {
-        body{ padding: 8px; }
-        .section + .section{ page-break-before: always; margin-top: 0; }
-      }
-    </style></head><body>
-      ${sections.join("")}
-    </body></html>
-  `);
-  win.document.close();
-  win.focus();
-  setTimeout(()=>{ win.print(); }, 350);
+  win.document.write(`<html><head><title>Laporan</title><style>
+    *{box-sizing:border-box} body{font-family:Arial,Helvetica,sans-serif;padding:18px;color:#111}.section{page-break-after:always}.section:last-child{page-break-after:auto}
+    .laporan-kop{display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:2px solid #0f6b3c;padding:0 0 10px;margin-bottom:14px}.laporan-kop-center{flex:1;text-align:center}.laporan-logo{width:58px;height:58px;object-fit:contain}.laporan-logo-sibest{border-radius:8px}.laporan-judul{font-size:18px;font-weight:700;color:#0f6b3c}.laporan-sekolah{font-size:15px;font-weight:700;margin-top:4px}.laporan-tanggal{font-size:10px;color:#555;margin-top:5px}table{width:100%;border-collapse:collapse;font-size:10px}th,td{border:1px solid #ccc;padding:6px 7px;text-align:left;vertical-align:top}th{background:#e9f4ed;color:#0f4d2c} @media print{body{padding:8px}.laporan-kop{break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid}}
+  </style></head><body>${sections.join("")}</body></html>`);
+  win.document.close(); win.focus(); setTimeout(()=>win.print(), 350);
 }
 
 /* =========================================================
@@ -7538,13 +7573,13 @@ function hafalanNicknameFor(fullName){
   return first || fullName || "-";
 }
 
-/* Nilai kualitas 0-100: Lancar=100, Cukup=50, Perlu diulang=0, dirata-ratakan
+/* Nilai kualitas 0-100: Lancar=80, Cukup=55, dirata-ratakan
    dari setoran yang sudah dinilai saja. null jika belum ada yang dinilai. */
 function hafalanExportQuality(reports){
-  const counts = { mumtaz:0, lancar:0, cukup:0, ulang:0, belum:0 };
+  const counts = { mumtaz:0, lancar:0, cukup:0, belum:0 };
   reports.forEach(r=>{ counts[r.quality && counts[r.quality] !== undefined ? r.quality : "belum"]++; });
-  const graded = counts.mumtaz + counts.lancar + counts.cukup + counts.ulang;
-  const pct = graded ? Math.round((counts.mumtaz*100 + counts.lancar*80 + counts.cukup*55 + counts.ulang*0) / graded) : null;
+  const graded = counts.mumtaz + counts.lancar + counts.cukup;
+  const pct = graded ? Math.round((counts.mumtaz*100 + counts.lancar*80 + counts.cukup*55) / graded) : null;
   return { counts, pct };
 }
 function hafalanExportQualitySummary(counts){
@@ -7552,7 +7587,6 @@ function hafalanExportQualitySummary(counts){
   if(counts.mumtaz) parts.push(`${counts.mumtaz} Mumtaz`);
   if(counts.lancar) parts.push(`${counts.lancar} Jayyid Jiddan`);
   if(counts.cukup) parts.push(`${counts.cukup} Jayyid`);
-  if(counts.ulang) parts.push(`${counts.ulang} Perlu diulang`);
   if(counts.belum) parts.push(`${counts.belum} Belum dinilai`);
   return parts.length ? parts.join(", ") : "-";
 }
@@ -9250,8 +9284,8 @@ function buildHafalanContext(question){
   lines.push("DATA HAFALAN SIBEST (periode: "+label+", "+from+" s/d "+to+")");
   lines.push("Catatan: sistem hanya mencatat setoran (surah/ayat dari-sampai, tanggal, waktu). Sistem TIDAK mencatat nilai atau kualitas bacaan.");
   lines.push("Total setoran pada periode ini: "+reports.length+" dari "+Object.keys(byStudent).length+" santri.");
-  { const q2 = { lancar:0, cukup:0, ulang:0, belum:0 }; reports.forEach(r=>{ q2[r.quality && q2[r.quality]!=null ? r.quality : "belum"]++; });
-    lines.push("Penilaian setoran: lancar "+q2.lancar+", cukup "+q2.cukup+", perlu diulang "+q2.ulang+", belum dinilai "+q2.belum+"."); }
+  { const q2 = { lancar:0, cukup:0, belum:0 }; reports.forEach(r=>{ q2[r.quality && q2[r.quality]!=null ? r.quality : "belum"]++; });
+    lines.push("Penilaian setoran: lancar "+q2.lancar+", cukup "+q2.cukup+", belum dinilai "+q2.belum+"."); }
 
   // Apakah pertanyaan menyebut nama santri tertentu?
   const seenKeys = new Set();
@@ -11271,11 +11305,8 @@ const HAFALAN_QUALITY = {
   mumtaz: { label:"Mumtaz", cls:"bg-[#d4af37]/15 text-[#8a6d1a]" },
   lancar: { label:"Jayyid Jiddan", cls:"bg-secondary-container text-on-secondary-container" },
   cukup:  { label:"Jayyid", cls:"bg-tertiary-fixed text-on-tertiary-fixed" },
-  // "ulang" sengaja tidak lagi ditawarkan sebagai pilihan (lihat filter di dropdown di bawah),
-  // tapi tetap didaftarkan supaya setoran lama yang sudah dinilai "Perlu diulang" tetap tampil benar.
-  ulang:  { label:"Perlu diulang", cls:"bg-error-container text-on-error-container" }
 };
-const HAFALAN_QUALITY_SELECTABLE = Object.keys(HAFALAN_QUALITY).filter(k => k !== "ulang");
+const HAFALAN_QUALITY_SELECTABLE = Object.keys(HAFALAN_QUALITY);
 function hafalanQualityBadge(q){
   const x = HAFALAN_QUALITY[q];
   return x ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${x.cls}">${x.label}</span>` : "";
@@ -11440,7 +11471,6 @@ function hafalanGradeSelectHtml(r){
   return `<select onchange="setHafalanQuality('${r.id}', this.value)" class="px-1.5 py-1 rounded-md border border-outline-variant text-xs bg-white outline-none focus:border-primary">
     <option value="">Belum dinilai</option>
     ${HAFALAN_QUALITY_SELECTABLE.map(k=>HAFALAN_QUALITY[k]).map((v,i)=>{ const k=HAFALAN_QUALITY_SELECTABLE[i]; return `<option value="${k}" ${r.quality===k?"selected":""}>${v.label}</option>`; }).join("")}
-    ${r.quality==="ulang" ? `<option value="ulang" selected>${HAFALAN_QUALITY.ulang.label}</option>` : ""}
   </select>`;
 }
 async function setHafalanQuality(id, q){

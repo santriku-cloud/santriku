@@ -13,6 +13,7 @@
 <!-- Library untuk fitur notifikasi email (EmailJS) & export laporan (Excel/PDF) -->
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <!-- Library untuk grafik naik-turun (trend chart) di Dashboard -->
@@ -5964,64 +5965,109 @@ function downloadLaporan(){
   else exportLaporanExcel(keys, currentLaporanFilter());
 }
 
-// Hitung lebar kolom Excel otomatis berdasarkan isi terpanjang tiap kolom,
-// supaya teks tidak kepotong / berantakan seperti tampilan default SheetJS.
-function excelAutoColWidths(headers, rows){
-  return headers.map(h=>{
-    let max = String(h).length;
-    rows.forEach(r=>{
-      const v = r[h];
-      const len = (v===null || v===undefined) ? 0 : String(v).length;
-      if(len > max) max = len;
-    });
-    return { wch: Math.min(Math.max(max + 2, 10), 45) };
-  });
-}
-
 /* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file Excel (satu sheet per jenis).
-   Tiap sheet diberi kop judul (judul laporan, nama sekolah, tanggal unduh) seperti pada versi Print/PDF,
-   lalu tabel data dengan lebar kolom otomatis supaya rapi.
-   Catatan: logo tidak bisa disisipkan ke sheet Excel dengan library gratis (SheetJS) yang dipakai di sini
-   — fitur sisip gambar hanya tersedia di versi berbayarnya. Untuk laporan dengan logo, gunakan unduh PDF/Gambar. */
-function exportLaporanExcel(keys, filter){
-  if(!window.XLSX){ toast("Library Excel belum siap, coba lagi sebentar.", "error"); return; }
-  const wb = XLSX.utils.book_new();
+   Dipakai ExcelJS (bukan SheetJS biasa) karena versi gratis SheetJS TIDAK bisa menulis format sel
+   (rata tengah, warna latar) — ExcelJS mendukung itu, sehingga judul benar-benar center dan baris
+   header berwarna abu-abu seperti pada versi PDF/Cetak.
+   Catatan: logo tetap tidak disisipkan ke sheet Excel (di luar cakupan kedua library ini secara gratis);
+   untuk laporan dengan logo, gunakan unduh PDF/Gambar. */
+async function exportLaporanExcel(keys, filter){
+  if(!window.ExcelJS){ toast("Library Excel belum siap, coba lagi sebentar.", "error"); return; }
+  const wb = new ExcelJS.Workbook();
   const usedNames = new Set();
   let anyRows = false;
+
   keys.forEach(key=>{
     const rows = laporanRows(key, filter);
     const lt = LAPORAN_TYPES.find(l=>l.key===key);
     if(!rows.length) return;
     anyRows = true;
+
     let sheetName = (lt?lt.label:key).replace(/[\[\]\*\/\\\?:]/g,"").slice(0,31) || key;
     let i = 2;
     while(usedNames.has(sheetName)){ sheetName = sheetName.slice(0, 28) + "_" + i; i++; }
     usedNames.add(sheetName);
 
     const headers = Object.keys(rows[0]);
-    const title = laporanTitleFor(lt);
-    const aoa = [
-      [title],
-      ["SMK Muhammadiyah Kendari"],
-      [`Dicetak: ${formatDate(todayISO())}`],
-      [],
-      headers,
-      ...rows.map(r => headers.map(h => r[h]))
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    const lastCol = Math.max(headers.length - 1, 0);
-    ws["!merges"] = [
-      { s:{r:0,c:0}, e:{r:0,c:lastCol} },
-      { s:{r:1,c:0}, e:{r:1,c:lastCol} },
-      { s:{r:2,c:0}, e:{r:2,c:lastCol} },
-    ];
-    ws["!cols"] = excelAutoColWidths(headers, rows);
-    ws["!rows"] = [{ hpx: 22 }, { hpx: 20 }, { hpx: 18 }];
+    const lastCol = Math.max(headers.length, 1);
+    const ws = wb.addWorksheet(sheetName);
 
-    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    // Baris 1-3: kop judul, digabung (merge) selebar tabel dan rata tengah.
+    ws.mergeCells(1, 1, 1, lastCol);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = laporanTitleFor(lt);
+    titleCell.font = { bold: true, size: 14 };
+    titleCell.alignment = { horizontal: "center", vertical: "middle" };
+
+    ws.mergeCells(2, 1, 2, lastCol);
+    const schoolCell = ws.getCell(2, 1);
+    schoolCell.value = "SMK Muhammadiyah Kendari";
+    schoolCell.font = { bold: true, size: 12, color: { argb: "FF0F6B3C" } };
+    schoolCell.alignment = { horizontal: "center", vertical: "middle" };
+
+    ws.mergeCells(3, 1, 3, lastCol);
+    const dateCell = ws.getCell(3, 1);
+    dateCell.value = `Dicetak: ${formatDate(todayISO())}`;
+    dateCell.font = { italic: true, size: 10, color: { argb: "FF666666" } };
+    dateCell.alignment = { horizontal: "center", vertical: "middle" };
+
+    ws.getRow(1).height = 22;
+    ws.getRow(2).height = 20;
+    ws.getRow(3).height = 18;
+    // Baris 4 dibiarkan kosong sebagai jarak sebelum tabel.
+
+    // Baris 5: header tabel dengan latar abu-abu (senada dengan versi Print/PDF).
+    const headerRow = ws.getRow(5);
+    headers.forEach((h, idx)=>{
+      const cell = headerRow.getCell(idx + 1);
+      cell.value = h;
+      cell.font = { bold: true };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+      cell.alignment = { vertical: "middle" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFCCCCCC" } },
+        left: { style: "thin", color: { argb: "FFCCCCCC" } },
+        bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
+        right: { style: "thin", color: { argb: "FFCCCCCC" } },
+      };
+    });
+    headerRow.commit();
+
+    // Baris data, dengan garis tepi tipis supaya rapi.
+    rows.forEach(r=>{
+      const dataRow = ws.addRow(headers.map(h => r[h]));
+      dataRow.eachCell(cell=>{
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE0E0E0" } },
+          left: { style: "thin", color: { argb: "FFE0E0E0" } },
+          bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+          right: { style: "thin", color: { argb: "FFE0E0E0" } },
+        };
+      });
+    });
+
+    // Lebar kolom otomatis mengikuti isi terpanjang.
+    headers.forEach((h, idx)=>{
+      let max = String(h).length;
+      rows.forEach(r=>{
+        const v = r[h];
+        const len = (v===null || v===undefined) ? 0 : String(v).length;
+        if(len > max) max = len;
+      });
+      ws.getColumn(idx + 1).width = Math.min(Math.max(max + 2, 10), 45);
+    });
   });
+
   if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
-  XLSX.writeFile(wb, laporanFileName(keys, "xlsx"));
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = laporanFileName(keys, "xlsx");
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
   toast("Laporan Excel berhasil diunduh.");
 }
 
@@ -11974,22 +12020,58 @@ function attendanceRekapHtml(){
       </tbody></table></div>
     </div>`;
 }
-function exportAttendanceRekap(){
-  if(!window.XLSX){ toast("Fitur Excel belum siap, coba lagi sebentar.", "error"); return; }
-  const data = [["Nama","Kelas","Hadir","Izin","Sakit","Alfa","Hari diabsen","% Hadir"]].concat(
-    attendanceRekapRows().map(({s,st})=>[s.name, s.kelas||"", st.H, st.I, st.S, st.A, st.days, st.days ? st.pct : ""]));
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(data);
-  ws["!cols"] = data[0].map((h,ci)=>{
+async function exportAttendanceRekap(){
+  if(!window.ExcelJS){ toast("Fitur Excel belum siap, coba lagi sebentar.", "error"); return; }
+  const headers = ["Nama","Kelas","Hadir","Izin","Sakit","Alfa","Hari diabsen","% Hadir"];
+  const rows = attendanceRekapRows().map(({s,st})=>[s.name, s.kelas||"", st.H, st.I, st.S, st.A, st.days, st.days ? st.pct : ""]);
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Rekap Absensi");
+  const headerRow = ws.getRow(1);
+  headers.forEach((h, idx)=>{
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = h;
+    cell.font = { bold: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCCCCCC" } },
+      left: { style: "thin", color: { argb: "FFCCCCCC" } },
+      bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
+      right: { style: "thin", color: { argb: "FFCCCCCC" } },
+    };
+  });
+  headerRow.commit();
+
+  rows.forEach(row=>{
+    const dataRow = ws.addRow(row);
+    dataRow.eachCell(cell=>{
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE0E0E0" } },
+        left: { style: "thin", color: { argb: "FFE0E0E0" } },
+        bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+        right: { style: "thin", color: { argb: "FFE0E0E0" } },
+      };
+    });
+  });
+
+  headers.forEach((h, idx)=>{
     let max = String(h).length;
-    data.slice(1).forEach(row=>{
-      const len = row[ci]==null ? 0 : String(row[ci]).length;
+    rows.forEach(row=>{
+      const v = row[idx];
+      const len = v==null ? 0 : String(v).length;
       if(len > max) max = len;
     });
-    return { wch: Math.min(Math.max(max + 2, 10), 45) };
+    ws.getColumn(idx + 1).width = Math.min(Math.max(max + 2, 10), 45);
   });
-  XLSX.utils.book_append_sheet(wb, ws, "Rekap Absensi");
-  XLSX.writeFile(wb, "Rekap-Absensi-"+attMonth+".xlsx");
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "Rekap-Absensi-"+attMonth+".xlsx";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /* =========================================================

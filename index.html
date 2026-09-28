@@ -6041,8 +6041,8 @@ function sbAddReportSheet(wb, sheetName, title, headers, rows){
 
   // Logo kiri & kanan, ditempel dekat teks kop yang ada di tengah.
   try{
-    const LOGO = 66, GAP = 12;
-    const textW = Math.max(String(title).length * 9.5, 24 * 10.5);   // perkiraan lebar teks kop (px)
+    const LOGO = 52, GAP = 10;   // tinggi logo ≈ tinggi 3 baris teks kop (judul s.d. tanggal cetak)
+    const textW = Math.max(String(title).length * 8.8, 24 * 9.4);   // perkiraan lebar teks kop (px)
     const colPx = i => Math.round((ws.getColumn(i).width || 10) * 7 + 5);
     const sumPx = () => { let t = 0; for(let i=1;i<=lastCol;i++) t += colPx(i); return t; };
     const need = textW + 2 * (LOGO + GAP) + 20;
@@ -6068,7 +6068,7 @@ function sbAddReportSheet(wb, sheetName, title, headers, rows){
       }
     };
     const place = (id, x) => ws.addImage(id, {
-      tl: Object.assign(anchorAt(x), { nativeRow: 0, nativeRowOff: 8 * 9525 }),
+      tl: Object.assign(anchorAt(x), { nativeRow: 0, nativeRowOff: 3 * 9525 }),
       ext: { width: LOGO, height: LOGO },
       editAs: "oneCell",
     });

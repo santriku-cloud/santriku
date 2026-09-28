@@ -5965,6 +5965,78 @@ function downloadLaporan(){
   else exportLaporanExcel(keys, currentLaporanFilter());
 }
 
+/* Bentuk sheet Excel standar SIBEST (dipakai semua unduhan laporan/rekap):
+   baris 1-3 = kop (judul, nama sekolah, tanggal cetak) digabung selebar tabel & rata tengah,
+   baris 4 kosong, baris 5 = header tabel (tebal, rata tengah), data mulai baris 6.
+   Kolom berisi angka asli otomatis rata tengah. rows = array of array. */
+function sbAddReportSheet(wb, sheetName, title, headers, rows){
+  const lastCol = Math.max(headers.length, 1);
+  const ws = wb.addWorksheet(sheetName);
+  const center = { horizontal: "center", vertical: "middle" };
+
+  ws.mergeCells(1, 1, 1, lastCol);
+  const titleCell = ws.getCell(1, 1);
+  titleCell.value = title;
+  titleCell.font = { bold: true, size: 14 };
+  titleCell.alignment = center;
+
+  ws.mergeCells(2, 1, 2, lastCol);
+  const schoolCell = ws.getCell(2, 1);
+  schoolCell.value = "SMK MUHAMMADIYAH KENDARI";
+  schoolCell.font = { bold: true, size: 12, color: { argb: "FF0F6B3C" } };
+  schoolCell.alignment = center;
+
+  ws.mergeCells(3, 1, 3, lastCol);
+  const dateCell = ws.getCell(3, 1);
+  dateCell.value = `Dicetak: ${formatDate(todayISO())}`;
+  dateCell.font = { italic: true, size: 10, color: { argb: "FF666666" } };
+  dateCell.alignment = center;
+
+  ws.getRow(1).height = 22;
+  ws.getRow(2).height = 20;
+  ws.getRow(3).height = 18;
+
+  const headerRow = ws.getRow(5);
+  headers.forEach((h, idx)=>{
+    const cell = headerRow.getCell(idx + 1);
+    cell.value = h;
+    cell.font = { bold: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+    cell.alignment = center;
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFCCCCCC" } },
+      left: { style: "thin", color: { argb: "FFCCCCCC" } },
+      bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
+      right: { style: "thin", color: { argb: "FFCCCCCC" } },
+    };
+  });
+  headerRow.commit();
+
+  rows.forEach(r=>{
+    const dataRow = ws.addRow(r);
+    dataRow.eachCell({ includeEmpty: true }, cell=>{
+      if(typeof cell.value === "number") cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE0E0E0" } },
+        left: { style: "thin", color: { argb: "FFE0E0E0" } },
+        bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+        right: { style: "thin", color: { argb: "FFE0E0E0" } },
+      };
+    });
+  });
+
+  headers.forEach((h, idx)=>{
+    let max = String(h).length;
+    rows.forEach(r=>{
+      const v = r[idx];
+      const len = (v===null || v===undefined) ? 0 : String(v).length;
+      if(len > max) max = len;
+    });
+    ws.getColumn(idx + 1).width = Math.min(Math.max(max + 2, 10), 45);
+  });
+  return ws;
+}
+
 /* Mendukung satu atau beberapa jenis data sekaligus — digabung dalam satu file Excel (satu sheet per jenis).
    Dipakai ExcelJS (bukan SheetJS biasa) karena versi gratis SheetJS TIDAK bisa menulis format sel
    (rata tengah, warna latar) — ExcelJS mendukung itu, sehingga judul benar-benar center dan baris
@@ -5989,73 +6061,7 @@ async function exportLaporanExcel(keys, filter){
     usedNames.add(sheetName);
 
     const headers = Object.keys(rows[0]);
-    const lastCol = Math.max(headers.length, 1);
-    const ws = wb.addWorksheet(sheetName);
-
-    // Baris 1-3: kop judul, digabung (merge) selebar tabel dan rata tengah.
-    ws.mergeCells(1, 1, 1, lastCol);
-    const titleCell = ws.getCell(1, 1);
-    titleCell.value = laporanTitleFor(lt);
-    titleCell.font = { bold: true, size: 14 };
-    titleCell.alignment = { horizontal: "center", vertical: "middle" };
-
-    ws.mergeCells(2, 1, 2, lastCol);
-    const schoolCell = ws.getCell(2, 1);
-    schoolCell.value = "SMK Muhammadiyah Kendari";
-    schoolCell.font = { bold: true, size: 12, color: { argb: "FF0F6B3C" } };
-    schoolCell.alignment = { horizontal: "center", vertical: "middle" };
-
-    ws.mergeCells(3, 1, 3, lastCol);
-    const dateCell = ws.getCell(3, 1);
-    dateCell.value = `Dicetak: ${formatDate(todayISO())}`;
-    dateCell.font = { italic: true, size: 10, color: { argb: "FF666666" } };
-    dateCell.alignment = { horizontal: "center", vertical: "middle" };
-
-    ws.getRow(1).height = 22;
-    ws.getRow(2).height = 20;
-    ws.getRow(3).height = 18;
-    // Baris 4 dibiarkan kosong sebagai jarak sebelum tabel.
-
-    // Baris 5: header tabel dengan latar abu-abu (senada dengan versi Print/PDF).
-    const headerRow = ws.getRow(5);
-    headers.forEach((h, idx)=>{
-      const cell = headerRow.getCell(idx + 1);
-      cell.value = h;
-      cell.font = { bold: true };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
-      cell.alignment = { vertical: "middle" };
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFCCCCCC" } },
-        left: { style: "thin", color: { argb: "FFCCCCCC" } },
-        bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
-        right: { style: "thin", color: { argb: "FFCCCCCC" } },
-      };
-    });
-    headerRow.commit();
-
-    // Baris data, dengan garis tepi tipis supaya rapi.
-    rows.forEach(r=>{
-      const dataRow = ws.addRow(headers.map(h => r[h]));
-      dataRow.eachCell(cell=>{
-        cell.border = {
-          top: { style: "thin", color: { argb: "FFE0E0E0" } },
-          left: { style: "thin", color: { argb: "FFE0E0E0" } },
-          bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
-          right: { style: "thin", color: { argb: "FFE0E0E0" } },
-        };
-      });
-    });
-
-    // Lebar kolom otomatis mengikuti isi terpanjang.
-    headers.forEach((h, idx)=>{
-      let max = String(h).length;
-      rows.forEach(r=>{
-        const v = r[h];
-        const len = (v===null || v===undefined) ? 0 : String(v).length;
-        if(len > max) max = len;
-      });
-      ws.getColumn(idx + 1).width = Math.min(Math.max(max + 2, 10), 45);
-    });
+    sbAddReportSheet(wb, sheetName, laporanTitleFor(lt), headers, rows.map(r => headers.map(h => r[h])));
   });
 
   if(!anyRows){ toast("Tidak ada data untuk diexport.", "error"); return; }
@@ -12026,43 +12032,8 @@ async function exportAttendanceRekap(){
   const rows = attendanceRekapRows().map(({s,st})=>[s.name, s.kelas||"", st.H, st.I, st.S, st.A, st.days, st.days ? st.pct : ""]);
 
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet("Rekap Absensi");
-  const headerRow = ws.getRow(1);
-  headers.forEach((h, idx)=>{
-    const cell = headerRow.getCell(idx + 1);
-    cell.value = h;
-    cell.font = { bold: true };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
-    cell.border = {
-      top: { style: "thin", color: { argb: "FFCCCCCC" } },
-      left: { style: "thin", color: { argb: "FFCCCCCC" } },
-      bottom: { style: "thin", color: { argb: "FFCCCCCC" } },
-      right: { style: "thin", color: { argb: "FFCCCCCC" } },
-    };
-  });
-  headerRow.commit();
-
-  rows.forEach(row=>{
-    const dataRow = ws.addRow(row);
-    dataRow.eachCell(cell=>{
-      cell.border = {
-        top: { style: "thin", color: { argb: "FFE0E0E0" } },
-        left: { style: "thin", color: { argb: "FFE0E0E0" } },
-        bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
-        right: { style: "thin", color: { argb: "FFE0E0E0" } },
-      };
-    });
-  });
-
-  headers.forEach((h, idx)=>{
-    let max = String(h).length;
-    rows.forEach(row=>{
-      const v = row[idx];
-      const len = v==null ? 0 : String(v).length;
-      if(len > max) max = len;
-    });
-    ws.getColumn(idx + 1).width = Math.min(Math.max(max + 2, 10), 45);
-  });
+  const [ay, am] = String(attMonth).split("-").map(Number);
+  sbAddReportSheet(wb, "Rekap Absensi", `Rekap Absensi ${MONTHS_ID[am-1] || ""} ${ay || ""}`.trim(), headers, rows);
 
   const buffer = await wb.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
